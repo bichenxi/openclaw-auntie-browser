@@ -1,0 +1,16 @@
+html {
+  height: 100%;
+}
+
+html,
+body,
+#app {
+  overscroll-behavior: none;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+
+  *:focus-visible {
+    outline: none;
+  }
+}

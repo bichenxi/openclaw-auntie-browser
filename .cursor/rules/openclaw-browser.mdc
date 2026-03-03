@@ -1,0 +1,15 @@
+---
+description: OpenClaw 专属浏览器项目约定与扩展方式
+alwaysApply: true
+---
+
+# OpenClaw Auntie Browser
+
+本仓库为 **OpenClaw 配套专属浏览器**，技术栈：Tauri 2 + Vue 3 + TypeScript + Vite + Pinia + UnoCSS + Element Plus。
+
+- **路由**：`src/pages/` 下 `.vue` 即路由（unplugin-vue-router）。
+- **布局**：`src/layouts/default.vue` 为默认布局。
+- **状态**：Pinia stores 在 `src/stores/`，可自动导入。
+- **Tauri 命令**：在 `src-tauri/src/lib.rs` 添加 `#[tauri::command]` 并注册到 `generate_handler![]`；前端用 `invoke('命令名', { ... })` 调用。
+
+详细说明与技能见 **`.agent/AGENTS.md`** 与 **`.agent/skills/openclaw-browser/SKILL.md`**。
