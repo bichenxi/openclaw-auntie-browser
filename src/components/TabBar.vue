@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { useTabsStore } from '@/stores/tabs'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const store = useTabsStore()
+
+function startDrag(e: MouseEvent) {
+  if (e.button !== 0) return
+  getCurrentWindow().startDragging()
+}
 </script>
 
 <template>
   <!-- tab-bar: -webkit-app-region:drag 无法原子化，保留在 style -->
-  <div class="tab-bar flex items-stretch h-11 bg-[#f5f2fc] border-b border-[#e8e2f4] px-2 gap-0.5 overflow-x-auto overflow-y-hidden shrink-0">
+  <div class="tab-bar flex items-stretch h-11 bg-[#f5f2fc] border-b border-[#e8e2f4] pr-2 gap-0.5 overflow-x-auto overflow-y-hidden shrink-0">
+    <!-- 红绿灯占位拖拽区 -->
+    <div class="drag-zone w-20 shrink-0" @mousedown="startDrag" />
+
     <!-- 首页 Tab -->
     <div
       class="tab-item flex items-center gap-1.5 px-3 min-w-auto rounded-t-lg cursor-pointer transition text-[#8a80a7] text-[13px] whitespace-nowrap relative mt-1.5"
@@ -45,7 +54,7 @@ const store = useTabsStore()
     </div>
 
     <!-- 占位（可拖拽区域） -->
-    <div class="tab-spacer flex-1 min-w-[40px]" />
+    <div class="tab-spacer flex-1 min-w-[40px]" @mousedown="startDrag" />
 
     <!-- OpenClaw 按钮 -->
     <div
@@ -107,7 +116,9 @@ const store = useTabsStore()
   -webkit-app-region: no-drag;
 }
 
+.drag-zone,
 .tab-spacer {
   -webkit-app-region: drag;
+  cursor: default;
 }
 </style>

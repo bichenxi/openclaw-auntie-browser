@@ -31,10 +31,6 @@ pub struct SkillMeta {
     pub files: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SkillFile {
-    pub content: String,
-}
 
 // ── Frontmatter parser ───────────────────────────────────────────────────────
 

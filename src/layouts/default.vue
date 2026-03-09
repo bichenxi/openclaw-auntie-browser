@@ -4,56 +4,12 @@ import OpenclawPage from '@/components/OpenclawPage.vue'
 import SettingsPage from '@/components/SettingsPage.vue'
 import SkillsPage from '@/components/SkillsPage.vue'
 import { useTabsStore } from '@/stores/tabs'
-import { useProfileStore } from '@/stores/profile'
-import { PROFILE_OPTIONS } from '@/stores/profile'
 
 const store = useTabsStore()
-const profileStore = useProfileStore()
-const profileSwitching = ref(false)
-
-onMounted(() => {
-  profileStore.loadProfile()
-})
-
-async function selectProfile(name: string) {
-  if (name === profileStore.currentProfile) return
-  profileSwitching.value = true
-  try {
-    await profileStore.switchProfile(name)
-  } finally {
-    profileSwitching.value = false
-  }
-}
-
-const profileLabels: Record<string, string> = {
-  default: '默认',
-  work: '工作',
-  personal: '个人',
-}
 </script>
 
 <template>
   <div class="flex flex-col h-screen overflow-hidden">
-    <!-- 身份行 -->
-    <div class="shrink-0 flex items-center gap-2.5 px-3 py-1.5 bg-[#faf8ff] border-b border-[#e8e2f4]">
-      <span class="text-[12px] text-[#8a80a7]">身份</span>
-      <div class="flex gap-1">
-        <button
-          v-for="name in PROFILE_OPTIONS"
-          :key="name"
-          type="button"
-          class="px-2.5 py-1 text-[12px] bg-transparent border border-[#e8e2f4] rounded-[6px] cursor-pointer transition"
-          :class="profileStore.currentProfile === name
-            ? 'text-secondary border-secondary/40 bg-secondary/10'
-            : 'text-[#8a80a7] hover:text-secondary hover:border-secondary/30 hover:bg-secondary/6'"
-          :disabled="profileSwitching"
-          @click="selectProfile(name)"
-        >
-          {{ profileLabels[name] ?? name }}
-        </button>
-      </div>
-    </div>
-
     <TabBar />
 
     <!-- 内容区 -->
