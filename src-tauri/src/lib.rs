@@ -8,7 +8,6 @@ mod profile;
 mod sidecar;
 mod skills;
 mod webview;
-mod xhs;
 
 use api::{set_active_tab_label, set_ai_paused, ActiveTabLabel, AiPaused, PendingEvalResult, PendingSnapshot};
 use app::{emit_stream_item, simulate_stream};

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { listen } from '@tauri-apps/api/event'
+import { storeToRefs } from 'pinia'
 import { useTabsStore } from '@/stores/tabs'
 import { useSettingsStore } from '@/stores/settings'
+import { useOpenclawStore } from '@/stores/openclaw'
 import {
   checkOpenclawAlive,
   openclawSendV1,
@@ -10,14 +11,10 @@ import {
 
 const store = useTabsStore()
 const settings = useSettingsStore()
+const ocStore = useOpenclawStore()
 
-type MessageType = 'thought' | 'tool' | 'user'
-interface Message {
-  type: MessageType
-  text: string
-  streaming: boolean   // true 表示正在接收 delta，尚未完成
-}
-const messages = ref<Message[]>([])
+const { messages, sending, sendError } = storeToRefs(ocStore)
+
 const messagesEl = ref<HTMLElement | null>(null)
 
 function scrollToBottom() {
@@ -42,8 +39,6 @@ const statusInfo = computed(() => {
 })
 
 const inputText = ref('')
-const sending = ref(false)
-const sendError = ref('')
 
 async function send() {
   const text = inputText.value.trim()
@@ -78,35 +73,18 @@ function handleKeydown(e: KeyboardEvent) {
 
 const hasToken = computed(() => !!settings.bearerToken)
 
+ocStore.startListeners()
+
 onMounted(() => {
   refreshStatus()
+  scrollToBottom()
   // 每 5 秒轮询一次状态
   const timer = setInterval(refreshStatus, 5000)
   onUnmounted(() => clearInterval(timer))
-
-  // 接收流式 delta：追加到最后一条同类型的 streaming 消息，否则新建
-  listen<{ type: string; text: string }>('stream-item', (e) => {
-    const payload = e.payload
-    if (!payload?.type || !payload?.text) return
-    const type: MessageType = payload.type === 'tool' ? 'tool' : 'thought'
-    const last = messages.value[messages.value.length - 1]
-    if (last && last.streaming && last.type === type) {
-      last.text += payload.text
-    } else {
-      messages.value.push({ type, text: payload.text, streaming: true })
-    }
-    scrollToBottom()
-  })
-
-  // 流结束：把最后一条 streaming 消息标记为完成
-  listen('stream-done', () => {
-    const last = messages.value[messages.value.length - 1]
-    if (last && last.streaming) {
-      last.streaming = false
-    }
-    sending.value = false
-  })
 })
+
+// 消息更新时滚动到底部
+watch(messages, scrollToBottom, { deep: true })
 </script>
 
 <template>

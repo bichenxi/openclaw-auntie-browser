@@ -7,12 +7,11 @@ use crate::profile;
 use crate::webview::rect;
 
 #[tauri::command]
-pub async fn create_tab_webview(app: AppHandle, label: String, url: String) -> Result<(), String> {
+pub async fn create_tab_webview(app: AppHandle, label: String, url: String, right_margin: f64) -> Result<(), String> {
     let window = app.get_window("main").ok_or("main window not found")?;
 
     let parsed_url: url::Url = url.parse().map_err(|e: url::ParseError| e.to_string())?;
-    let (x, y, w, h) = rect::calc_webview_rect(&window)?;
-
+    let (x, y, w, h) = rect::calc_webview_rect(&window, right_margin)?;
     let stealth_js = include_str!("../stealth.js");
     let bridge_js = include_str!("../bridge.js");
     let xhs_js = include_str!("../xhs.js");
@@ -142,9 +141,9 @@ pub async fn close_webview(app: AppHandle, label: String) -> Result<(), String> 
 }
 
 #[tauri::command]
-pub async fn resize_all_webviews(app: AppHandle, labels: Vec<String>) -> Result<(), String> {
+pub async fn resize_all_webviews(app: AppHandle, labels: Vec<String>, right_margin: f64) -> Result<(), String> {
     let window = app.get_window("main").ok_or("main window not found")?;
-    let (x, y, w, h) = rect::calc_webview_rect(&window)?;
+    let (x, y, w, h) = rect::calc_webview_rect(&window, right_margin)?;
 
     for label in labels {
         if let Some(wv) = app.get_webview(&label) {

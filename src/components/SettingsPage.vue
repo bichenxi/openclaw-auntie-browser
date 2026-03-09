@@ -8,7 +8,6 @@ const settings = useSettingsStore()
 const store = useTabsStore()
 const profileStore = useProfileStore()
 
-// 每个身份独立编辑 session key（以 profileStore 的当前身份为准）
 const tokenInput = ref(settings.bearerToken)
 const sessionKeyInput = ref(settings.sessionKey)
 const baseUrlInput = ref(settings.baseUrl)
@@ -23,7 +22,6 @@ const profileLabels: Record<string, string> = {
   personal: '个人',
 }
 
-// 切换身份时同步 session key 输入框
 watch(() => settings.sessionKey, (val) => {
   sessionKeyInput.value = val
 })
@@ -54,10 +52,10 @@ onMounted(refreshStatus)
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-[#f8f6ff] overflow-hidden">
+  <div class="h-full bg-[#f8f6ff] overflow-hidden" style="display:grid;grid-template-rows:auto 1fr">
 
     <!-- Header -->
-    <div class="shrink-0 flex items-center justify-between px-6 py-3.5 bg-white border-b border-[#e8e2f4]">
+    <div class="flex items-center justify-between px-6 py-3.5 bg-white border-b border-[#e8e2f4]">
       <div class="flex items-center gap-3">
         <div class="w-9 h-9 rounded-[10px] bg-[linear-gradient(135deg,#7c5cfc_0%,#5f47ce_100%)] flex items-center justify-center shadow-[0_2px_10px_rgba(95,71,206,0.25)] shrink-0">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -65,9 +63,9 @@ onMounted(refreshStatus)
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
         </div>
-        <div class="flex flex-col">
-          <span class="text-[16px] font-bold text-[#1f1f2e] leading-[1.2]">设置</span>
-          <span class="text-[11px] text-[#9b8ec4] mt-px">OpenClaw 连接配置</span>
+        <div>
+          <div class="text-[16px] font-bold text-[#1f1f2e] leading-[1.2]">设置</div>
+          <div class="text-[11px] text-[#9b8ec4] mt-px">OpenClaw 连接配置</div>
         </div>
       </div>
       <button
@@ -83,18 +81,18 @@ onMounted(refreshStatus)
     </div>
 
     <!-- Body -->
-    <div class="sp-body flex-1 overflow-y-auto p-6 flex flex-col gap-4 max-w-[700px] w-full self-center box-border">
+    <div class="sp-body overflow-y-auto p-6 max-w-[700px] w-full mx-auto box-border">
 
       <!-- ── 身份选择 ── -->
-      <div class="bg-white border border-[#e8e2f4] rounded-[12px] p-5 flex flex-col gap-3">
-        <div class="flex items-center gap-[7px] text-[13px] font-semibold text-secondary">
+      <div class="bg-white border border-[#e8e2f4] rounded-[12px] p-5 mb-4">
+        <div class="flex items-center gap-[7px] text-[13px] font-semibold text-secondary mb-3">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
             <circle cx="12" cy="7" r="4" />
           </svg>
           当前身份
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 mb-3">
           <button
             v-for="name in PROFILE_OPTIONS"
             :key="name"
@@ -115,14 +113,12 @@ onMounted(refreshStatus)
       </div>
 
       <!-- ── 会话配置（per-profile）── -->
-      <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden">
-        <!-- 区块标题 -->
+      <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden mb-4">
         <div class="flex items-center gap-[7px] px-5 py-3.5 border-b border-[#f0ecfa]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span class="text-[13px] font-semibold text-secondary">会话配置</span>
-          <!-- 当前身份标签 -->
           <span class="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] text-[11px] font-medium bg-secondary/8 text-secondary">
             <span
               class="w-1.5 h-1.5 rounded-full bg-secondary"
@@ -131,9 +127,9 @@ onMounted(refreshStatus)
             {{ profileLabels[profileStore.currentProfile] ?? profileStore.currentProfile }}
           </span>
         </div>
-        <div class="p-5 flex flex-col gap-1.5">
-          <label class="text-[12px] font-semibold text-[#4a4568]">OPENCLAW_SESSION_KEY</label>
-          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2">每个身份拥有独立的会话标识，切换身份后此处自动更新。</p>
+        <div class="p-5">
+          <label class="block text-[12px] font-semibold text-[#4a4568] mb-1.5">OPENCLAW_SESSION_KEY</label>
+          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2.5">每个身份拥有独立的会话标识，切换身份后此处自动更新。</p>
           <input
             v-model="sessionKeyInput"
             type="text"
@@ -144,7 +140,7 @@ onMounted(refreshStatus)
       </div>
 
       <!-- ── 认证配置（全局）── -->
-      <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden">
+      <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden mb-4">
         <div class="flex items-center gap-[7px] px-5 py-3.5 border-b border-[#f0ecfa]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -153,9 +149,9 @@ onMounted(refreshStatus)
           <span class="text-[13px] font-semibold text-secondary">认证配置</span>
           <span class="ml-auto text-[11px] text-[#c4bdd8]">所有身份共用</span>
         </div>
-        <div class="p-5 flex flex-col gap-1.5">
-          <label class="text-[12px] font-semibold text-[#4a4568]">OPENCLAW_BEARER_TOKEN</label>
-          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2">Bearer Token，用于 API 鉴权。若已设置同名环境变量可留空。</p>
+        <div class="p-5">
+          <label class="block text-[12px] font-semibold text-[#4a4568] mb-1.5">OPENCLAW_BEARER_TOKEN</label>
+          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2.5">Bearer Token，用于 API 鉴权。若已设置同名环境变量可留空。</p>
           <input
             v-model="tokenInput"
             type="password"
@@ -168,7 +164,7 @@ onMounted(refreshStatus)
       </div>
 
       <!-- ── 连接配置（全局）── -->
-      <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden">
+      <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden mb-4">
         <div class="flex items-center gap-[7px] px-5 py-3.5 border-b border-[#f0ecfa]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary">
             <circle cx="12" cy="12" r="10" />
@@ -178,19 +174,17 @@ onMounted(refreshStatus)
           <span class="text-[13px] font-semibold text-secondary">连接配置</span>
           <span class="ml-auto text-[11px] text-[#c4bdd8]">所有身份共用</span>
         </div>
-        <div class="p-5 flex flex-col gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-[12px] font-semibold text-[#4a4568]">Base URL</label>
-            <p class="text-[11px] text-[#9b8ec4] m-0 mb-1">OpenClaw HTTP 服务地址，留空使用默认值。</p>
-            <input
-              v-model="baseUrlInput"
-              type="text"
-              class="w-full px-3.5 py-2.5 text-[13px] font-[inherit] border-[1.5px] border-[#e8e2f4] rounded-[8px] outline-none box-border text-[#1f1f2e] bg-[#fafafa] transition placeholder-[#c4bdd8] focus:border-[#7c5cfc] focus:bg-white focus:shadow-[0_0_0_3px_rgba(95,71,206,0.08)]"
-              placeholder="http://127.0.0.1:18789"
-            />
-          </div>
+        <div class="p-5">
+          <label class="block text-[12px] font-semibold text-[#4a4568] mb-1.5">Base URL</label>
+          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2.5">OpenClaw HTTP 服务地址，留空使用默认值。</p>
+          <input
+            v-model="baseUrlInput"
+            type="text"
+            class="w-full px-3.5 py-2.5 text-[13px] font-[inherit] border-[1.5px] border-[#e8e2f4] rounded-[8px] outline-none box-border text-[#1f1f2e] bg-[#fafafa] transition placeholder-[#c4bdd8] focus:border-[#7c5cfc] focus:bg-white focus:shadow-[0_0_0_3px_rgba(95,71,206,0.08)]"
+            placeholder="http://127.0.0.1:18789"
+          />
           <!-- 连接状态 -->
-          <div class="flex items-center gap-2.5 pt-1">
+          <div class="flex items-center gap-2.5 mt-3">
             <div
               class="flex items-center gap-[5px] px-3 py-[5px] rounded-[20px] text-[12px] font-medium"
               :class="openclawAlive

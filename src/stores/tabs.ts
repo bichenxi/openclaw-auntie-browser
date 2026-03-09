@@ -4,6 +4,8 @@ import { setAiPaused as apiSetAiPaused } from '@/api/openclaw'
 import { useRecordingStore } from '@/stores/recording'
 
 const WEBVIEW_LOADING_DELAY_MS = 1200
+const CHAT_SIDEBAR_WIDTH = 300
+const SIDEBAR_HANDLE_WIDTH = 36
 
 export interface TabItem {
   id: string
@@ -19,6 +21,7 @@ export const useTabsStore = defineStore('tabs', () => {
   const activeTabId = ref<string | null>(null)
   const loadingTabId = ref<string | null>(null)
   const specialView = ref<SpecialView | null>(null)
+  const sidebarOpen = ref(false)
   let tabIndex = 0
   let loadingTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -32,6 +35,11 @@ export const useTabsStore = defineStore('tabs', () => {
   async function setAiPaused(value: boolean) {
     await apiSetAiPaused(value).catch(() => {})
     aiPaused.value = value
+  }
+
+  async function toggleSidebar() {
+    sidebarOpen.value = !sidebarOpen.value
+    await resizeAllWebviews()
   }
 
   async function switchToSpecialView(view: SpecialView) {
@@ -59,7 +67,7 @@ export const useTabsStore = defineStore('tabs', () => {
     const id = `tab-${Date.now()}-${tabIndex}`
     const title = url.replace(/^https?:\/\//, '').split('/')[0]
 
-    await webviewApi.createTabWebview(id, url)
+    await webviewApi.createTabWebview(id, url, SIDEBAR_HANDLE_WIDTH + (sidebarOpen.value ? CHAT_SIDEBAR_WIDTH : 0))
     useRecordingStore().pushStep({ type: 'navigate', url })
 
     tabs.value.push({ id, label: id, url, title })
@@ -115,7 +123,7 @@ export const useTabsStore = defineStore('tabs', () => {
   async function resizeAllWebviews() {
     const labels = tabs.value.map((t) => t.label)
     if (labels.length === 0) return
-    await webviewApi.resizeAllWebviews(labels).catch(() => {})
+    await webviewApi.resizeAllWebviews(labels, SIDEBAR_HANDLE_WIDTH + (sidebarOpen.value ? CHAT_SIDEBAR_WIDTH : 0)).catch(() => {})
   }
 
   return {
@@ -123,10 +131,12 @@ export const useTabsStore = defineStore('tabs', () => {
     activeTabId,
     loadingTabId,
     specialView,
+    sidebarOpen,
     isHome,
     isWebviewLoading,
     aiPaused,
     setAiPaused,
+    toggleSidebar,
     switchToSpecialView,
     openTab,
     switchTab,

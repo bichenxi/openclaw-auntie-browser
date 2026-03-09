@@ -578,7 +578,6 @@ pub fn spawn_http_server(app: AppHandle) {
                 .route("/extract-text", post(handle_extract_text))
                 .route("/back", post(handle_back))
                 .route("/forward", post(handle_forward))
-                .nest("/xhs", crate::xhs::xhs_router())
                 .with_state(app_clone)
                 .layer(tower_http::cors::CorsLayer::permissive());
             axum::serve(listener, router).await.expect("serve API");

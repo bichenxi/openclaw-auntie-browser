@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export async function createTabWebview(label: string, url: string): Promise<void> {
-  await invoke('create_tab_webview', { label, url })
+export async function createTabWebview(label: string, url: string, rightMargin: number): Promise<void> {
+  await invoke('create_tab_webview', { label, url, rightMargin })
 }
 
 export async function showWebview(label: string): Promise<void> {
@@ -16,8 +16,8 @@ export async function closeWebview(label: string): Promise<void> {
   await invoke('close_webview', { label })
 }
 
-export async function resizeAllWebviews(labels: string[]): Promise<void> {
-  await invoke('resize_all_webviews', { labels })
+export async function resizeAllWebviews(labels: string[], rightMargin: number): Promise<void> {
+  await invoke('resize_all_webviews', { labels, rightMargin })
 }
 
 export async function evalInWebview(label: string, script: string): Promise<void> {

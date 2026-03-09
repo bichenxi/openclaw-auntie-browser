@@ -27,6 +27,36 @@ const store = useTabsStore()
           <span class="text-[13px] text-[#9b8ec4]">加载中...</span>
         </div>
       </Transition>
+
+      <!-- 聊天侧边栏：webview 活动时悬浮在右侧 -->
+      <template v-if="store.activeTabId !== null && store.specialView === null">
+        <!-- 侧边栏面板 -->
+        <div
+          v-if="store.sidebarOpen"
+          class="absolute right-9 top-0 bottom-0 w-[300px] border-l border-[#e8e2f4] shadow-[-4px_0_16px_rgba(95,71,206,0.08)] bg-white z-40 overflow-hidden"
+        >
+          <OpenclawPage />
+        </div>
+
+        <!-- 右侧固定拨片（36px，始终可见，点击展开/收起） -->
+        <div
+          class="absolute right-0 top-0 bottom-0 w-9 flex flex-col items-center justify-center gap-2 cursor-pointer z-50 border-l select-none"
+          :class="store.sidebarOpen
+            ? 'bg-[rgba(124,92,252,0.06)] border-[#d4cdf4]'
+            : 'bg-[rgba(245,242,252,0.92)] border-[#e8e2f4] hover:bg-[rgba(124,92,252,0.06)]'"
+          @click="store.toggleSidebar()"
+        >
+          <img src="/logo.jpg" class="w-5 h-5 rounded-[5px] object-cover shadow-sm shrink-0" alt="AI" />
+          <svg
+            class="transition-transform duration-200 text-[#9b8ec4]"
+            :class="store.sidebarOpen ? '' : 'rotate-180'"
+            width="10" height="10" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </div>
+      </template>
     </div>
   </div>
 </template>
