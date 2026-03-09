@@ -94,6 +94,21 @@ fn default_true() -> bool {
     true
 }
 
+/// 检查 OpenClaw HTTP 服务是否在线（任意 HTTP 响应均视为在线）。
+#[tauri::command]
+pub async fn check_openclaw_alive(base_url: Option<String>) -> bool {
+    let base = base_url.unwrap_or_else(|| DEFAULT_API_BASE.to_string());
+    let url = format!("{}/", base.trim_end_matches('/'));
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    client.get(&url).send().await.is_ok()
+}
+
 #[tauri::command]
 pub async fn openclaw_send_v1(app: AppHandle, params: OpenclawV1Params) -> Result<(), String> {
     let base = params

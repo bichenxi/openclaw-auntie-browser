@@ -2,6 +2,7 @@
 import TabBar from '@/components/TabBar.vue'
 import OpenclawPage from '@/components/OpenclawPage.vue'
 import SettingsPage from '@/components/SettingsPage.vue'
+import SkillsPage from '@/components/SkillsPage.vue'
 import { useTabsStore } from '@/stores/tabs'
 import { useProfileStore } from '@/stores/profile'
 import { PROFILE_OPTIONS } from '@/stores/profile'
@@ -59,6 +60,7 @@ const profileLabels: Record<string, string> = {
     <div class="flex-1 min-h-0 overflow-hidden relative">
       <OpenclawPage v-if="store.specialView === 'openclaw'" />
       <SettingsPage v-else-if="store.specialView === 'settings'" />
+      <SkillsPage v-else-if="store.specialView === 'skills'" />
       <RouterView v-else-if="store.isHome" />
       <Transition v-else name="fade">
         <div

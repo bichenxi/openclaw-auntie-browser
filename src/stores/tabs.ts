@@ -12,7 +12,7 @@ export interface TabItem {
   title: string
 }
 
-export type SpecialView = 'openclaw' | 'settings'
+export type SpecialView = 'openclaw' | 'settings' | 'skills'
 
 export const useTabsStore = defineStore('tabs', () => {
   const tabs = ref<TabItem[]>([])

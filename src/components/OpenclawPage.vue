@@ -3,9 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useTabsStore } from '@/stores/tabs'
 import { useSettingsStore } from '@/stores/settings'
 import {
-  startOpenclawProcess,
-  stopOpenclawProcess,
-  isOpenclawProcessRunning,
+  checkOpenclawAlive,
   openclawSendV1,
   type OpenclawV1Params,
 } from '@/api/openclaw'
@@ -31,39 +29,17 @@ function scrollToBottom() {
 }
 
 const openclawRunning = ref(false)
-const openclawBusy = ref(false)
 
 async function refreshStatus() {
-  try {
-    openclawRunning.value = await isOpenclawProcessRunning()
-  } catch {
-    openclawRunning.value = false
-  }
+  openclawRunning.value = await checkOpenclawAlive(settings.baseUrl || undefined)
 }
 
-async function startProcess() {
-  openclawBusy.value = true
-  try {
-    await startOpenclawProcess()
-    await refreshStatus()
-  } catch (e) {
-    console.error(e)
-  } finally {
-    openclawBusy.value = false
-  }
-}
-
-async function stopProcess() {
-  openclawBusy.value = true
-  try {
-    await stopOpenclawProcess()
-    await refreshStatus()
-  } catch (e) {
-    console.error(e)
-  } finally {
-    openclawBusy.value = false
-  }
-}
+// OpenClaw 自身连接状态（ping 18789）
+const statusInfo = computed(() => {
+  if (!openclawRunning.value) return { label: '未连接', color: 'gray', pulse: false }
+  if (sending.value) return { label: '思考中', color: 'purple', pulse: true }
+  return { label: '已连接', color: 'green', pulse: false }
+})
 
 const inputText = ref('')
 const sending = ref(false)
@@ -104,6 +80,9 @@ const hasToken = computed(() => !!settings.bearerToken)
 
 onMounted(() => {
   refreshStatus()
+  // 每 5 秒轮询一次状态
+  const timer = setInterval(refreshStatus, 5000)
+  onUnmounted(() => clearInterval(timer))
 
   // 接收流式 delta：追加到最后一条同类型的 streaming 消息，否则新建
   listen<{ type: string; text: string }>('stream-item', (e) => {
@@ -145,50 +124,20 @@ onMounted(() => {
           <span class="text-[11px] text-[#9b8ec4] mt-px">AI 助手对话</span>
         </div>
       </div>
-      <div class="flex items-center gap-2">
-        <!-- 运行状态徽章 -->
-        <div
-          class="flex items-center gap-[5px] px-2.5 py-1 rounded-[20px] text-[12px] font-medium"
-          :class="openclawRunning
-            ? 'bg-[rgba(34,197,94,0.1)] text-[#16a34a]'
-            : 'bg-[rgba(107,114,128,0.1)] text-[#6b7280]'"
-        >
-          <span
-            class="w-1.5 h-1.5 rounded-full bg-current"
-            :class="{ 'animate-[pulse_1.5s_ease-in-out_infinite]': openclawRunning }"
-          />
-          {{ openclawRunning ? '运行中' : '未运行' }}
-        </div>
-        <!-- 启动/停止按钮 -->
-        <button
-          v-if="!openclawRunning"
-          type="button"
-          class="px-3 py-[5px] text-[12px] rounded-[6px] cursor-pointer transition border disabled:opacity-50 disabled:cursor-not-allowed text-[#16a34a] border-[rgba(34,197,94,0.3)] bg-[rgba(34,197,94,0.08)] hover:not-disabled:bg-[rgba(34,197,94,0.14)]"
-          :disabled="openclawBusy"
-          @click="startProcess"
-        >
-          启动
-        </button>
-        <button
-          v-else
-          type="button"
-          class="px-3 py-[5px] text-[12px] rounded-[6px] cursor-pointer transition border disabled:opacity-50 disabled:cursor-not-allowed text-[#dc2626] border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.07)] hover:not-disabled:bg-[rgba(239,68,68,0.13)]"
-          :disabled="openclawBusy"
-          @click="stopProcess"
-        >
-          停止
-        </button>
-        <!-- 暂停/继续按钮 -->
-        <button
-          type="button"
-          class="px-3 py-[5px] text-[12px] rounded-[6px] cursor-pointer transition border disabled:opacity-50 disabled:cursor-not-allowed"
-          :class="store.aiPaused
-            ? 'text-[#16a34a] border-[rgba(34,197,94,0.4)] bg-[rgba(34,197,94,0.1)]'
-            : 'text-secondary border-secondary/25 bg-secondary/7 hover:bg-secondary/13'"
-          @click="store.setAiPaused(!store.aiPaused)"
-        >
-          {{ store.aiPaused ? '继续 AI' : '暂停 AI' }}
-        </button>
+      <div
+        class="flex items-center gap-[6px] px-3 py-[5px] rounded-[20px] text-[12px] font-medium border transition-all duration-500"
+        :class="{
+          'text-[#6b7280] bg-[rgba(107,114,128,0.08)] border-[rgba(107,114,128,0.18)]': statusInfo.color === 'gray',
+          'text-[#16a34a] bg-[rgba(34,197,94,0.09)] border-[rgba(34,197,94,0.2)]': statusInfo.color === 'green',
+          'text-[#7c5cfc] bg-secondary/8 border-secondary/22': statusInfo.color === 'purple',
+          'text-[#d97706] bg-[rgba(245,158,11,0.09)] border-[rgba(245,158,11,0.22)]': statusInfo.color === 'amber',
+        }"
+      >
+        <span
+          class="w-[7px] h-[7px] rounded-full bg-current shrink-0"
+          :class="{ 'animate-[pulse_1.5s_ease-in-out_infinite]': statusInfo.pulse }"
+        />
+        {{ statusInfo.label }}
       </div>
     </div>
 
@@ -272,19 +221,6 @@ onMounted(() => {
       v-if="sendError"
       class="shrink-0 m-0 px-5 py-2 text-[12px] text-[#dc2626] bg-[rgba(239,68,68,0.06)] border-t border-[rgba(239,68,68,0.15)]"
     >{{ sendError }}</p>
-
-    <!-- AI 暂停提示 -->
-    <div
-      v-if="store.aiPaused"
-      class="shrink-0 flex items-center gap-1.5 px-5 py-2 text-[12px] text-[#16a34a] bg-[rgba(34,197,94,0.07)] border-t border-[rgba(34,197,94,0.2)]"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="10" y1="15" x2="10" y2="9" />
-        <line x1="14" y1="15" x2="14" y2="9" />
-      </svg>
-      AI 已暂停，你可手动操作浏览器。完成后点击「继续 AI」。
-    </div>
 
     <!-- 输入区 -->
     <div class="shrink-0 px-5 py-4 bg-white border-t border-[#e8e2f4]">

@@ -50,6 +50,11 @@ export async function openclawSendV1(params: OpenclawV1Params): Promise<void> {
   await invoke('openclaw_send_v1', { params })
 }
 
+/** 检查 OpenClaw HTTP 服务是否在线（实际发起连接探测） */
+export async function checkOpenclawAlive(baseUrl?: string): Promise<boolean> {
+  return invoke<boolean>('check_openclaw_alive', { baseUrl: baseUrl || null })
+}
+
 /** 暂停/继续 AI 浏览器操控。暂停时，18790 端口所有浏览器操控接口返回 503。 */
 export async function setAiPaused(paused: boolean): Promise<void> {
   await invoke('set_ai_paused', { paused })
