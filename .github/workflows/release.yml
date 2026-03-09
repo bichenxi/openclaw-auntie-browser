@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS Apple Silicon
+            runs-on: macos-latest
+            args: --target aarch64-apple-darwin
+
+          - name: macOS Intel
+            runs-on: macos-latest
+            args: --target x86_64-apple-darwin
+
+          # Windows / Linux 可按需启用：
+          # - name: Windows
+          #   runs-on: windows-latest
+          #   args: ''
+          # - name: Linux
+          #   runs-on: ubuntu-22.04
+          #   args: ''
+
+    runs-on: ${{ matrix.runs-on }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Linux 系统依赖 ──────────────────────────────────────────────────────
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # ── Rust ───────────────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ contains(matrix.args, 'aarch64-apple-darwin') && 'aarch64-apple-darwin' || contains(matrix.args, 'x86_64-apple-darwin') && 'x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # ── Node / pnpm ────────────────────────────────────────────────────────
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install frontend deps
+        run: pnpm install
+
+      # ── macOS 代码签名（可选）─────────────────────────────────────────────
+      # 若需要签名，在 GitHub Secrets 中配置以下变量：
+      #   APPLE_CERTIFICATE          - Base64 编码的 .p12 证书
+      #   APPLE_CERTIFICATE_PASSWORD - 证书密码
+      #   APPLE_SIGNING_IDENTITY     - 签名身份（如 "Developer ID Application: ..."）
+      #   APPLE_ID                   - Apple ID（用于公证）
+      #   APPLE_PASSWORD             - App-Specific Password
+      #   APPLE_TEAM_ID              - Team ID
+
+      # ── Tauri Build ────────────────────────────────────────────────────────
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 签名相关（未配置时跳过签名）
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Claw Browser ${{ github.ref_name }}
+          releaseBody: |
+            ## Claw Browser ${{ github.ref_name }}
+
+            ### 安装
+            - **macOS Apple Silicon**: 下载 `_aarch64.dmg`
+            - **macOS Intel**: 下载 `_x64.dmg`
+
+            > 首次打开如遇"无法验证开发者"，在访达中右键 → 打开即可。
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
