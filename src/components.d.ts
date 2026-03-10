@@ -9,12 +9,12 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AIConsole: typeof import('./components/AIConsole.vue')['default']
-    OpenclawPage: typeof import('./components/OpenclawPage.vue')['default']
+    OpenclawPage: typeof import('./views/OpenclawPage.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
-    SettingsPage: typeof import('./components/SettingsPage.vue')['default']
-    SetupPage: typeof import('./components/SetupPage.vue')['default']
-    SkillsPage: typeof import('./components/SkillsPage.vue')['default']
+    SettingsPage: typeof import('./views/SettingsPage.vue')['default']
+    SetupPage: typeof import('./views/SetupPage.vue')['default']
+    SkillsPage: typeof import('./views/SkillsPage.vue')['default']
     TabBar: typeof import('./components/TabBar.vue')['default']
   }
 }

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import TabBar from '@/components/TabBar.vue'
-import OpenclawPage from '@/components/OpenclawPage.vue'
-import SettingsPage from '@/components/SettingsPage.vue'
-import SkillsPage from '@/components/SkillsPage.vue'
-import SetupPage from '@/components/SetupPage.vue'
+import OpenclawPage from '@/views/OpenclawPage.vue'
+import SettingsPage from '@/views/SettingsPage.vue'
+import SkillsPage from '@/views/SkillsPage.vue'
+import SetupPage from '@/views/SetupPage.vue'
 import { useTabsStore } from '@/stores/tabs'
 
 const store = useTabsStore()

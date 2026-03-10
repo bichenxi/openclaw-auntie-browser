@@ -75,6 +75,7 @@ export default defineConfig(({ mode }) => {
         extensions: ['vue'],
         include: [/\.vue$/, /\.vue\?vue/],
         directoryAsNamespace: true,
+        dirs: ['src/components', 'src/views'],
         dts: 'src/components.d.ts',
       }),
 
