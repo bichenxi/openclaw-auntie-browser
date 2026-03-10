@@ -226,23 +226,12 @@ watch(tempMessages, scrollToBottom, { deep: true })
     <!-- 临时会话提示条 -->
     <div
       v-if="tempMode"
-      class="shrink-0 flex items-center justify-between gap-2 px-5 py-2 bg-[rgba(95,71,206,0.05)] border-b border-secondary/15 text-[12px] text-[#7c5cfc]"
+      class="shrink-0 flex items-center gap-2 px-5 py-2 bg-[rgba(95,71,206,0.05)] border-b border-secondary/15 text-[12px] text-[#7c5cfc]"
     >
-      <div class="flex items-center gap-1.5">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-        </svg>
-        <span>临时会话：每次仅发送当前消息，不携带历史，节省 token</span>
-      </div>
-      <div class="flex items-center gap-1.5">
-        <span class="text-[#9b8ec4]">模型</span>
-        <input
-          v-model="tempModel"
-          type="text"
-          class="px-2 py-0.5 text-[11px] border border-secondary/20 rounded-[5px] bg-white text-[#5f47ce] outline-none w-[180px] focus:border-secondary/50"
-          placeholder="模型名称"
-        />
-      </div>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      </svg>
+      <span>临时会话：每次仅发送当前消息，不携带历史，节省 token</span>
     </div>
 
     <!-- 消息区 -->
