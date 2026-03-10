@@ -17,21 +17,33 @@ jobs:
           - name: macOS Apple Silicon
             runs-on: macos-latest
             rust-target: aarch64-apple-darwin
+            fnm-triple: aarch64-apple-darwin
+            fnm-asset: fnm-macos.zip
+            fnm-bin: fnm
             args: --target aarch64-apple-darwin
 
           - name: macOS Intel
             runs-on: macos-latest
             rust-target: x86_64-apple-darwin
+            fnm-triple: x86_64-apple-darwin
+            fnm-asset: fnm-macos.zip
+            fnm-bin: fnm
             args: --target x86_64-apple-darwin
 
           - name: Windows
             runs-on: windows-latest
             rust-target: ''
+            fnm-triple: x86_64-pc-windows-msvc
+            fnm-asset: fnm-windows.zip
+            fnm-bin: fnm.exe
             args: ''
 
           - name: Linux
             runs-on: ubuntu-22.04
             rust-target: ''
+            fnm-triple: x86_64-unknown-linux-gnu
+            fnm-asset: fnm-linux.zip
+            fnm-bin: fnm
             args: ''
 
     runs-on: ${{ matrix.runs-on }}
@@ -80,10 +92,26 @@ jobs:
 
       # ── 下载 fnm sidecar ──────────────────────────────────────────────────
       - name: Download fnm sidecar
-        env:
-          RUST_TARGET: ${{ matrix.rust-target }}
         shell: bash
-        run: bash scripts/download-fnm.sh
+        run: |
+          set -euo pipefail
+          FNM_VERSION=1.38.1
+          ASSET="${{ matrix.fnm-asset }}"
+          TRIPLE="${{ matrix.fnm-triple }}"
+          BIN="${{ matrix.fnm-bin }}"
+          mkdir -p src-tauri/binaries
+          curl -fsSL --retry 3 \
+            "https://github.com/Schniz/fnm/releases/download/v${FNM_VERSION}/${ASSET}" \
+            -o /tmp/fnm_dl.zip
+          unzip -o /tmp/fnm_dl.zip -d /tmp/fnm_extract
+          if [[ "$BIN" == "fnm.exe" ]]; then
+            cp "/tmp/fnm_extract/${BIN}" "src-tauri/binaries/fnm-${TRIPLE}.exe"
+          else
+            cp "/tmp/fnm_extract/${BIN}" "src-tauri/binaries/fnm-${TRIPLE}"
+            chmod +x "src-tauri/binaries/fnm-${TRIPLE}"
+          fi
+          echo "fnm sidecar ready:"
+          ls -lh src-tauri/binaries/
 
       # ── macOS 代码签名（可选）─────────────────────────────────────────────
       # 若需要签名，在 GitHub Secrets 中配置以下变量：
