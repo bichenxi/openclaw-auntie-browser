@@ -235,6 +235,26 @@ pub fn delete_skill_file(app: AppHandle, skill_name: String, filename: String) -
     fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
+/// Reads gateway.auth.token from ~/.openclaw/openclaw.json.
+/// Returns the token string, or an error if the file/field is missing.
+#[tauri::command]
+pub fn get_openclaw_gateway_token(app: AppHandle) -> Result<String, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let config_path = home.join(".openclaw").join("openclaw.json");
+    if !config_path.exists() {
+        return Err("未找到 ~/.openclaw/openclaw.json，请先启动 OpenClaw 完成初始化".to_string());
+    }
+    let content = fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    json.get("gateway")
+        .and_then(|g| g.get("auth"))
+        .and_then(|a| a.get("token"))
+        .and_then(|t| t.as_str())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_string())
+        .ok_or_else(|| "openclaw.json 中未找到 gateway.auth.token".to_string())
+}
+
 // ── Security: path traversal guard ───────────────────────────────────────────
 
 fn validate_name(name: &str) -> Result<(), String> {

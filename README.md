@@ -60,6 +60,32 @@ Claw Browser 是一款轻量桌面浏览器，核心目的只有一个：**让 A
 
 ---
 
+## macOS 安装后无法打开？
+
+由于应用暂未签名，macOS 会阻止首次启动。按以下步骤解除限制：
+
+**1. 打开终端（Terminal）**
+
+**2. 输入下面的命令，注意末尾有一个空格，先不要按回车：**
+
+```
+sudo xattr -rd com.apple.quarantine
+```
+
+**3. 将 `claw-browser` 的应用图标直接拖入终端窗口**
+
+终端会自动填入应用路径，最终命令看起来像这样：
+
+```
+sudo xattr -rd com.apple.quarantine /Applications/claw-browser.app
+```
+
+**4. 按下回车，输入 Mac 开机密码（输入时屏幕不显示字符），再按回车**
+
+**5. 重新打开应用即可**
+
+---
+
 ## 本地开发
 
 ```bash

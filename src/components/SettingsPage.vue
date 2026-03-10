@@ -3,6 +3,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useTabsStore } from '@/stores/tabs'
 import { useProfileStore, PROFILE_OPTIONS } from '@/stores/profile'
 import { checkOpenclawAlive } from '@/api/openclaw'
+import { getOpenclawGatewayToken } from '@/api/skills'
 
 const settings = useSettingsStore()
 const store = useTabsStore()
@@ -15,6 +16,8 @@ const saved = ref(false)
 const switching = ref(false)
 const openclawAlive = ref(false)
 const checkingAlive = ref(false)
+const fetchingToken = ref(false)
+const fetchTokenError = ref('')
 
 const profileLabels: Record<string, string> = {
   default: '默认',
@@ -40,6 +43,18 @@ async function refreshStatus() {
   checkingAlive.value = true
   openclawAlive.value = await checkOpenclawAlive(baseUrlInput.value || undefined)
   checkingAlive.value = false
+}
+
+async function fetchGatewayToken() {
+  fetchingToken.value = true
+  fetchTokenError.value = ''
+  try {
+    tokenInput.value = await getOpenclawGatewayToken()
+  } catch (e: any) {
+    fetchTokenError.value = e?.message ?? String(e)
+  } finally {
+    fetchingToken.value = false
+  }
 }
 
 function save() {
@@ -152,14 +167,25 @@ onMounted(refreshStatus)
         <div class="p-5">
           <label class="block text-[12px] font-semibold text-[#4a4568] mb-1.5">OPENCLAW_BEARER_TOKEN</label>
           <p class="text-[11px] text-[#9b8ec4] m-0 mb-2.5">Bearer Token，用于 API 鉴权。若已设置同名环境变量可留空。</p>
-          <input
-            v-model="tokenInput"
-            type="password"
-            class="w-full px-3.5 py-2.5 text-[13px] font-[inherit] border-[1.5px] border-[#e8e2f4] rounded-[8px] outline-none box-border text-[#1f1f2e] bg-[#fafafa] transition placeholder-[#c4bdd8] focus:border-[#7c5cfc] focus:bg-white focus:shadow-[0_0_0_3px_rgba(95,71,206,0.08)]"
-            placeholder="输入 Bearer Token"
-            autocomplete="off"
-            @blur="tokenInput = tokenInput.trim()"
-          />
+          <div class="flex gap-2">
+            <input
+              v-model="tokenInput"
+              type="password"
+              class="flex-1 min-w-0 px-3.5 py-2.5 text-[13px] font-[inherit] border-[1.5px] border-[#e8e2f4] rounded-[8px] outline-none box-border text-[#1f1f2e] bg-[#fafafa] transition placeholder-[#c4bdd8] focus:border-[#7c5cfc] focus:bg-white focus:shadow-[0_0_0_3px_rgba(95,71,206,0.08)]"
+              placeholder="输入 Bearer Token"
+              autocomplete="off"
+              @blur="tokenInput = tokenInput.trim()"
+            />
+            <button
+              type="button"
+              class="shrink-0 px-3.5 py-2.5 text-[12px] font-medium rounded-[8px] border border-[#e8e2f4] text-[#8a80a7] bg-transparent cursor-pointer transition whitespace-nowrap hover:text-secondary hover:border-secondary/30 hover:bg-secondary/6 disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="fetchingToken"
+              @click="fetchGatewayToken"
+            >
+              {{ fetchingToken ? '读取中…' : '自动获取' }}
+            </button>
+          </div>
+          <p v-if="fetchTokenError" class="text-[11px] text-accent m-0 mt-2">{{ fetchTokenError }}</p>
         </div>
       </div>
 

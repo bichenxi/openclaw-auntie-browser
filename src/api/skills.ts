@@ -38,3 +38,7 @@ export function checkBuiltinSkillInstalled(): Promise<boolean> {
 export function installBuiltinSkill(): Promise<void> {
   return invoke('install_builtin_skill')
 }
+
+export function getOpenclawGatewayToken(): Promise<string> {
+  return invoke('get_openclaw_gateway_token')
+}

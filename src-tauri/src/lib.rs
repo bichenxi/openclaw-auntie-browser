@@ -66,6 +66,7 @@ pub fn run() {
             skills::delete_skill_file,
             skills::check_builtin_skill_installed,
             skills::install_builtin_skill,
+            skills::get_openclaw_gateway_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
