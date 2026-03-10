@@ -5,7 +5,6 @@ mod openclaw;
 mod openclaw_http;
 mod openclaw_process;
 mod profile;
-mod sidecar;
 mod skills;
 mod webview;
 
@@ -47,7 +46,6 @@ pub fn run() {
             openclaw_disconnect,
             openclaw_send_v1,
             check_openclaw_alive,
-            sidecar::test_sidecar,
             openclaw_process::start_openclaw,
             openclaw_process::stop_openclaw,
             openclaw_process::is_openclaw_running,

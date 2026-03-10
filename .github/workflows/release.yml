@@ -14,19 +14,22 @@ jobs:
         include:
           - name: macOS Apple Silicon
             runs-on: macos-latest
+            rust-target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
 
           - name: macOS Intel
             runs-on: macos-latest
+            rust-target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
 
-          # Windows / Linux 可按需启用：
           - name: Windows
             runs-on: windows-latest
+            rust-target: ''
             args: ''
 
           - name: Linux
             runs-on: ubuntu-22.04
+            rust-target: ''
             args: ''
 
     runs-on: ${{ matrix.runs-on }}
@@ -46,10 +49,15 @@ jobs:
             patchelf
 
       # ── Rust ───────────────────────────────────────────────────────────────
-      - name: Install Rust stable
+      - name: Install Rust stable (with cross target)
+        if: matrix.rust-target != ''
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ contains(matrix.args, 'aarch64-apple-darwin') && 'aarch64-apple-darwin' || contains(matrix.args, 'x86_64-apple-darwin') && 'x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.rust-target }}
+
+      - name: Install Rust stable
+        if: matrix.rust-target == ''
+        uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -82,7 +90,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 签名相关（未配置时跳过签名）
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}

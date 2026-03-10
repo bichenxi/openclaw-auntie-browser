@@ -32,24 +32,14 @@ pub async fn start_openclaw(app: AppHandle) -> Result<(), String> {
         }
     }
 
+    let entry = std::env::var(ENV_OPENCLAW_ENTRY)
+        .map_err(|_| "请设置 OPENCLAW_ENTRY 环境变量指向 OpenClaw 入口脚本".to_string())?;
     let shell = app.shell();
-    let child = if let Ok(entry) = std::env::var(ENV_OPENCLAW_ENTRY) {
-        // 使用系统 node 运行入口脚本
-        let cmd = shell.command("node").args([entry]);
-        let (mut rx, child) = cmd.spawn().map_err(|e| e.to_string())?;
-        tauri::async_runtime::spawn(async move {
-            while rx.recv().await.is_some() {}
-        });
-        child
-    } else {
-        // 回退到 Sidecar 二进制（需已用 pkg 等打好 openclaw 并放入 bin/）
-        let sidecar = shell.sidecar("openclaw").map_err(|e| e.to_string())?;
-        let (mut rx, child) = sidecar.spawn().map_err(|e| e.to_string())?;
-        tauri::async_runtime::spawn(async move {
-            while rx.recv().await.is_some() {}
-        });
-        child
-    };
+    let cmd = shell.command("node").args([entry]);
+    let (mut rx, child) = cmd.spawn().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn(async move {
+        while rx.recv().await.is_some() {}
+    });
 
     let mut guard = state.0.lock().expect("openclaw process lock");
     *guard = Some(child);
