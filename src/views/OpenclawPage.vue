@@ -82,6 +82,12 @@ async function sendTemp() {
   const text = inputText.value.trim()
   if (!text || tempSending.value) return
 
+  // 携带本轮完整上下文（已完成的消息）+ 当前新消息
+  const contextMessages = tempMessages.value
+    .filter(m => !m.streaming && m.content)
+    .map(m => ({ role: m.role, content: m.content }))
+  contextMessages.push({ role: 'user', content: text })
+
   tempMessages.value.push({ role: 'user', content: text })
   inputText.value = ''
   tempSending.value = true
@@ -97,9 +103,8 @@ async function sendTemp() {
       token: settings.bearerToken || undefined,
       session_key: settings.sessionKey || undefined,
       model: tempModel.value,
-      message: text,
+      messages: contextMessages,
     })
-    // 流式内容由 temp-stream-item 事件驱动，temp-stream-done 时结束
   } catch (e: any) {
     tempError.value = e?.message ?? String(e)
     const last = tempMessages.value[tempMessages.value.length - 1]
@@ -109,6 +114,11 @@ async function sendTemp() {
     }
     tempSending.value = false
   }
+}
+
+function newTempChat() {
+  tempMessages.value = []
+  tempError.value = ''
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -226,12 +236,25 @@ watch(tempMessages, scrollToBottom, { deep: true })
     <!-- 临时会话提示条 -->
     <div
       v-if="tempMode"
-      class="shrink-0 flex items-center gap-2 px-5 py-2 bg-[rgba(95,71,206,0.05)] border-b border-secondary/15 text-[12px] text-[#7c5cfc]"
+      class="shrink-0 flex items-center justify-between gap-2 px-5 py-2 bg-[rgba(95,71,206,0.05)] border-b border-secondary/15 text-[12px] text-[#7c5cfc]"
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-      </svg>
-      <span>临时会话：每次仅发送当前消息，不携带历史，节省 token</span>
+      <div class="flex items-center gap-1.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+        <span>临时会话：携带本轮上下文，节省 token</span>
+      </div>
+      <button
+        type="button"
+        class="flex items-center gap-1 px-2.5 py-1 rounded-[6px] border border-secondary/25 text-[11px] text-[#7c5cfc] bg-transparent cursor-pointer transition hover:bg-secondary/8 disabled:opacity-40 disabled:cursor-not-allowed"
+        :disabled="tempSending || tempMessages.length === 0"
+        @click="newTempChat"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        新对话
+      </button>
     </div>
 
     <!-- 消息区 -->

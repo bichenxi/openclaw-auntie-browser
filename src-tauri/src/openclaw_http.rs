@@ -86,8 +86,8 @@ pub struct OpenclawCompletionsParams {
     pub session_key: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
-    /// 单条用户消息（临时会话只发当前消息，不携带历史）
-    pub message: String,
+    /// 本轮会话的完整消息历史（含当前新消息，最后一条必须是 user）
+    pub messages: Vec<serde_json::Value>,
 }
 
 /// 临时会话：POST /v1/chat/completions，流式结果通过 temp-stream-item / temp-stream-done 推送。
@@ -126,7 +126,7 @@ pub async fn openclaw_send_completions(
 
     let body = serde_json::json!({
         "model": model,
-        "messages": [{ "role": "user", "content": params.message }],
+        "messages": params.messages,
         "stream": true,
         "sessionKey": session_key,
     });

@@ -35,13 +35,13 @@ export async function isOpenclawProcessRunning(): Promise<boolean> {
   return invoke<boolean>('is_openclaw_running')
 }
 
-/** 临时会话参数（单条消息，不携带历史） */
+/** 临时会话参数（携带本轮完整上下文） */
 export interface OpenclawCompletionsParams {
   base_url?: string
   token?: string
   session_key?: string
   model?: string
-  message: string
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
 /** 临时会话：POST /v1/chat/completions，流式结果通过 temp-stream-item / temp-stream-done 事件推送 */
