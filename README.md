@@ -44,9 +44,48 @@ Claw Browser 是一款轻量桌面浏览器，核心目的只有一个：**让 A
 
 ---
 
+## 一键安装 OpenClaw
+
+Claw Browser 内置了 OpenClaw 安装向导。**首次启动时，如果检测到本地 OpenClaw 尚未运行，应用会自动弹出安装引导页**，无需手动折腾终端。
+
+### 安装流程
+
+点击「开始安装」后，应用会按以下顺序自动检测你的环境并选择最合适的策略：
+
+| 你的环境 | 安装策略 |
+|---------|---------|
+| 已有 Node.js ≥ 22 | 直接用系统 npm 全局安装，零侵入 |
+| 已有 fnm | 用你的 fnm 安装 Node.js 22，`fnm ls` 可见 |
+| 已有 nvm | 用你的 nvm 安装 Node.js 22，`nvm ls` 可见 |
+| 以上均无 | 用应用内置 fnm（独立隔离目录）安装 Node.js 22 |
+
+> 无论哪种策略，安装完成后应用都会尝试将 `openclaw` 命令自动添加到终端全局 PATH（软链到 `/usr/local/bin`），之后在终端直接输入 `openclaw` 即可使用。
+
+### 完成初始化
+
+npm 安装完成后，应用会提示你在终端执行：
+
+```bash
+openclaw onboard
+```
+
+这一步是 OpenClaw 的首次配置（包含一个交互式安全确认），完成后 gateway 即可启动。之后回到应用点击「检测连接」即可开始使用。
+
+### 后续重启
+
+OpenClaw gateway 停止后，在终端执行以下命令重新启动：
+
+```bash
+openclaw gateway start
+```
+
+或在应用「设置」页点击「检测并修复 Gateway 配置」→「重启 Gateway」一键完成。
+
+---
+
 ## 使用方式
 
-1. 启动 Claw Browser
+1. 启动 Claw Browser（首次使用会自动引导安装 OpenClaw）
 2. 打开 OpenClaw，连接到本地浏览器
 3. 对大虾说出你的任务
 
