@@ -2,13 +2,15 @@
 //!
 //! 检测优先级（从上到下，第一个满足的策略生效）：
 //!
-//! 1. 系统已有 node >= 22        → 直接用系统 npm install -g openclaw
-//! 2. 系统已有 fnm（登录 shell 可见）→ 用系统 fnm install 22，再 fnm exec npm install
-//! 3. 系统已有 nvm（~/.nvm/nvm.sh 存在）→ 用系统 nvm install 22，再 nvm exec npm install
+//! 1. 系统已有 nvm（~/.nvm/nvm.sh 存在）→ nvm install 22 + nvm alias default 22，再 nvm exec npm install
+//! 2. 系统已有 fnm（登录 shell 可见）→ fnm install 22 + fnm default 22，再 fnm exec npm install
+//! 3. 系统已有 node >= 22（无版本管理器）→ 直接用系统 npm install -g openclaw
 //! 4. 以上均无                   → 使用 app 内置 fnm（独立隔离目录，不影响用户环境）
 //!
 //! 注意：
-//! - 策略 2/3 安装完 openclaw 后，会尝试将二进制软链到 /usr/local/bin 或 ~/.local/bin。
+//! - 策略 1/2 会将 node 22 设为默认版本，确保新终端中 node/npm/openclaw 均可直接使用。
+//! - 策略 1（nvm）由 nvm 自动管理 PATH，无需额外软链。
+//! - 策略 2（fnm）安装后会尝试将 openclaw 软链到 /usr/local/bin 或 ~/.local/bin 作为备份。
 //! - 策略 4（内置 fnm）会将 node bin 目录直接写入 shell profile（~/.zshrc），
 //!   使 node、npm、openclaw 等命令在终端中全部可用。
 //! - openclaw onboard 是交互式 TUI，无法在 app 内自动化，安装完成后由 UI 引导用户手动执行。
@@ -102,21 +104,22 @@ fn detect_system_fnm() -> bool {
         .unwrap_or(false)
 }
 
-/// 综合检测，返回最合适的安装策略
+/// 综合检测，返回最合适的安装策略。
+/// 优先使用版本管理器（nvm/fnm），确保安装后能设为默认版本。
 fn detect_node_strategy(home_dir: &std::path::Path) -> NodeStrategy {
-    // 1. node >= 22？
-    if let Some(major) = detect_system_node_major() {
-        if major >= 22 {
-            return NodeStrategy::SystemNode(major);
-        }
+    // 1. 系统 nvm？优先，安装 node 22 并设为默认
+    if home_dir.join(".nvm").join("nvm.sh").exists() {
+        return NodeStrategy::SystemNvm;
     }
     // 2. 系统 fnm？
     if detect_system_fnm() {
         return NodeStrategy::SystemFnm;
     }
-    // 3. 系统 nvm？
-    if home_dir.join(".nvm").join("nvm.sh").exists() {
-        return NodeStrategy::SystemNvm;
+    // 3. 无版本管理器，系统已有 node >= 22
+    if let Some(major) = detect_system_node_major() {
+        if major >= 22 {
+            return NodeStrategy::SystemNode(major);
+        }
     }
     // 4. 兜底：内置 fnm
     NodeStrategy::BundledFnm
@@ -436,9 +439,9 @@ async fn run_install_steps(
         NodeStrategy::SystemNode(v) =>
             emit_log(app, &format!("检测到系统 Node.js v{}（>= 22），将直接使用系统 npm 安装。", v)),
         NodeStrategy::SystemFnm =>
-            emit_log(app, "检测到系统已安装 fnm，将使用系统 fnm 安装 Node.js 22（不修改当前默认 node 版本）。"),
+            emit_log(app, "检测到系统已安装 fnm，将使用系统 fnm 安装 Node.js 22 并设为默认版本。"),
         NodeStrategy::SystemNvm =>
-            emit_log(app, "检测到系统已安装 nvm，将使用系统 nvm 安装 Node.js 22（不修改当前默认 node 版本）。"),
+            emit_log(app, "检测到系统已安装 nvm，将使用系统 nvm 安装 Node.js 22 并设为默认版本。"),
         NodeStrategy::BundledFnm => {
             emit_log(app, "未检测到系统 node 版本管理工具，将使用应用内置 fnm（独立隔离目录）安装 Node.js 22。");
             emit_log(app, &format!("内置 fnm 目录：{}", fnm_dir));
@@ -456,15 +459,15 @@ async fn run_install_steps(
             emit_step(app, step1, "done");
         }
         NodeStrategy::SystemFnm => {
-            emit_log(app, "正在通过系统 fnm 安装 Node.js 22...");
-            match run_login_shell_step(app, "fnm install 22", cancel_rx).await {
+            emit_log(app, "正在通过系统 fnm 安装 Node.js 22 并设为默认版本...");
+            match run_login_shell_step(app, "fnm install 22 && fnm default 22", cancel_rx).await {
                 Ok(()) => emit_step(app, step1, "done"),
                 Err(e) => { emit_step(app, step1, "error"); emit_error(app, step1, &e); return Err(e); }
             }
         }
         NodeStrategy::SystemNvm => {
-            emit_log(app, "正在通过系统 nvm 安装 Node.js 22...");
-            let cmd = format!("source '{}' && nvm install 22", nvm_sh.display());
+            emit_log(app, "正在通过系统 nvm 安装 Node.js 22 并设为默认版本...");
+            let cmd = format!("source '{}' && nvm install 22 && nvm alias default 22", nvm_sh.display());
             match run_login_shell_step(app, &cmd, cancel_rx).await {
                 Ok(()) => emit_step(app, step1, "done"),
                 Err(e) => { emit_step(app, step1, "error"); emit_error(app, step1, &e); return Err(e); }
@@ -521,8 +524,7 @@ async fn run_install_steps(
             try_symlink_from_which(app, "fnm exec --using=22 -- which openclaw", &home_dir);
         }
         NodeStrategy::SystemNvm => {
-            let cmd = format!("source '{}' && nvm exec 22 which openclaw", nvm_sh.display());
-            try_symlink_from_which(app, &cmd, &home_dir);
+            emit_log(app, "nvm 已将 Node.js 22 设为默认版本，新终端中 node/npm/openclaw 均可直接使用。");
         }
         NodeStrategy::BundledFnm => {
             try_symlink_bundled_fnm(app, fnm_dir, &home_dir);
