@@ -61,6 +61,19 @@ jobs:
 
       - run: pnpm install
 
+      - name: Download fnm sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          FNM_VERSION=1.38.1
+          mkdir -p src-tauri/binaries
+          curl -fsSL --retry 3 \
+            "https://github.com/Schniz/fnm/releases/download/v${FNM_VERSION}/fnm-macos.zip" \
+            -o /tmp/fnm_dl.zip
+          unzip -o /tmp/fnm_dl.zip -d /tmp/fnm_extract
+          cp /tmp/fnm_extract/fnm src-tauri/binaries/fnm-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/fnm-aarch64-apple-darwin
+
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check --release

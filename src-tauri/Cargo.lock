@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "claw-browser"
-version = "1.0.5"
+version = "1.0.13"
 dependencies = [
  "axum",
  "base64 0.22.1",
