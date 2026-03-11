@@ -80,7 +80,8 @@ async function handleCancel() {
 }
 
 function copyCommand() {
-  navigator.clipboard.writeText('openclaw onboard').catch(() => {})
+  const cmd = installerStore.isOnboarded ? 'openclaw gateway start' : 'openclaw onboard'
+  navigator.clipboard.writeText(cmd).catch(() => {})
 }
 </script>
 
@@ -100,7 +101,9 @@ function copyCommand() {
 
       <!-- 命令展示 -->
       <div class="flex items-center gap-2 bg-[#1a1030] rounded-xl px-5 py-3.5 mb-6 w-full max-w-[340px]">
-        <code class="flex-1 text-green-400 font-mono text-[14px] select-all">openclaw onboard</code>
+        <code class="flex-1 text-green-400 font-mono text-[14px] select-all">
+          {{ installerStore.isOnboarded ? 'openclaw gateway start' : 'openclaw onboard' }}
+        </code>
         <button
           class="flex-shrink-0 text-[#9b8ec4] hover:text-white transition-colors cursor-pointer bg-transparent border-none p-0"
           title="复制命令"

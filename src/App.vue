@@ -21,8 +21,9 @@ async function detectAndRedirect() {
   if (installerStore.installing) return
   const alive = await checkOpenclawAlive().catch(() => false)
   if (!alive && store.specialView !== 'setup') {
-    const installed = await checkOpenclawInstalled().catch(() => false)
-    installerStore.isInstalled = installed
+    const status = await checkOpenclawInstalled().catch(() => ({ npm_installed: false, onboarded: false }))
+    installerStore.isInstalled = status.npm_installed || status.onboarded
+    installerStore.isOnboarded = status.onboarded
     store.switchToSpecialView('setup')
   }
 }

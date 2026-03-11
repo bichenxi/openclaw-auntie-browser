@@ -10,9 +10,8 @@ export interface InstallStep {
 }
 
 const INITIAL_STEPS: InstallStep[] = [
-  { id: 'install-node', label: '安装 Node.js 22', status: 'pending' },
+  { id: 'install-node', label: '检测 / 安装 Node.js 环境', status: 'pending' },
   { id: 'install-openclaw', label: '安装 OpenClaw（npm install -g openclaw）', status: 'pending' },
-  { id: 'onboard', label: '初始化配置（openclaw onboard）', status: 'pending' },
 ]
 
 const MAX_LOG_LINES = 200
@@ -23,8 +22,10 @@ export const useInstallerStore = defineStore('installer', () => {
   const installing = ref(false)
   const error = ref<string | null>(null)
   const done = ref(false)
-  /** true = ~/.openclaw/openclaw.json 存在，openclaw 已安装但未运行 */
+  /** npm 包已安装（可能尚未 onboard） */
   const isInstalled = ref(false)
+  /** openclaw onboard 已完成（openclaw.json 存在） */
+  const isOnboarded = ref(false)
 
   let unlistens: Array<() => void> = []
 
@@ -41,9 +42,7 @@ export const useInstallerStore = defineStore('installer', () => {
     listen<{ step: string; status: string }>('installer:step', (e) => {
       const { step, status } = e.payload
       const found = steps.value.find((s) => s.id === step)
-      if (found) {
-        found.status = status as StepStatus
-      }
+      if (found) found.status = status as StepStatus
     }).then((fn) => unlistens.push(fn))
 
     listen<{ line: string }>('installer:log', (e) => {
@@ -53,6 +52,14 @@ export const useInstallerStore = defineStore('installer', () => {
       }
     }).then((fn) => unlistens.push(fn))
 
+    // npm 安装完成，需要用户手动运行 openclaw onboard
+    listen('installer:need-onboard', () => {
+      installing.value = false
+      isInstalled.value = true
+      isOnboarded.value = false
+    }).then((fn) => unlistens.push(fn))
+
+    // 兼容旧版（future use）
     listen('installer:done', () => {
       installing.value = false
       done.value = true
@@ -69,5 +76,9 @@ export const useInstallerStore = defineStore('installer', () => {
     unlistens = []
   }
 
-  return { steps, logs, installing, error, done, isInstalled, resetSteps, startListeners, stopListeners }
+  return {
+    steps, logs, installing, error, done,
+    isInstalled, isOnboarded,
+    resetSteps, startListeners, stopListeners,
+  }
 })
