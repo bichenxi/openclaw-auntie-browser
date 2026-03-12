@@ -27,6 +27,8 @@ futures-util = "0.3"
 url = "2"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json", "stream"] }
-pty-process = { version = "0.5", features = ["async"] }
 portable-pty = "0.8"
 vt100 = "0.15"
+
+[target.'cfg(unix)'.dependencies]
+pty-process = { version = "0.5", features = ["async"] }
