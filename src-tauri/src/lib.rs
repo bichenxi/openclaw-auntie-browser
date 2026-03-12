@@ -1,6 +1,7 @@
 mod api;
 mod app;
 mod config;
+mod configure;
 mod gateway;
 mod installer;
 mod openclaw;
@@ -34,6 +35,8 @@ pub fn run() {
         .manage(AiPaused::default())
         .manage(openclaw_process::OpenClawProcess::default())
         .manage(InstallerState::default())
+        .manage(configure::OnboardPtyState::default())
+        .manage(configure::OnboardWizardState::default())
         .setup(|app| {
             api::spawn_http_server(app.handle().clone());
             Ok(())
@@ -75,6 +78,15 @@ pub fn run() {
             installer::start_install,
             installer::cancel_install,
             installer::check_openclaw_installed,
+            configure::run_onboard,
+            configure::start_onboard_pty,
+            configure::write_onboard_stdin,
+            configure::kill_onboard_pty,
+            configure::is_onboard_pty_running,
+            configure::start_onboard_wizard,
+            configure::wizard_send_key,
+            configure::kill_onboard_wizard,
+            configure::is_onboard_wizard_running,
             gateway::check_and_fix_gateway_config,
             gateway::restart_openclaw_gateway,
         ])

@@ -6,6 +6,7 @@
 // biome-ignore lint: disable
 export {}
 declare global {
+  const AUTH_OPTIONS: typeof import('./stores/onboard')['AUTH_OPTIONS']
   const EffectScope: typeof import('vue')['EffectScope']
   const ElMessage: typeof import('element-plus/es')['ElMessage']
   const ElMessageBox: typeof import('element-plus/es')['ElMessageBox']
@@ -212,6 +213,7 @@ declare global {
   const useNow: typeof import('@vueuse/core')['useNow']
   const useObjectUrl: typeof import('@vueuse/core')['useObjectUrl']
   const useOffsetPagination: typeof import('@vueuse/core')['useOffsetPagination']
+  const useOnboardStore: typeof import('./stores/onboard')['useOnboardStore']
   const useOnline: typeof import('@vueuse/core')['useOnline']
   const useOpenclawStore: typeof import('./stores/openclaw')['useOpenclawStore']
   const usePageLeave: typeof import('@vueuse/core')['usePageLeave']
@@ -538,6 +540,7 @@ declare module 'vue' {
     readonly useNow: UnwrapRef<typeof import('@vueuse/core')['useNow']>
     readonly useObjectUrl: UnwrapRef<typeof import('@vueuse/core')['useObjectUrl']>
     readonly useOffsetPagination: UnwrapRef<typeof import('@vueuse/core')['useOffsetPagination']>
+    readonly useOnboardStore: UnwrapRef<typeof import('./stores/onboard')['useOnboardStore']>
     readonly useOnline: UnwrapRef<typeof import('@vueuse/core')['useOnline']>
     readonly useOpenclawStore: UnwrapRef<typeof import('./stores/openclaw')['useOpenclawStore']>
     readonly usePageLeave: UnwrapRef<typeof import('@vueuse/core')['usePageLeave']>

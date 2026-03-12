@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { useInstallerStore } from '@/stores/installer'
 import { useTabsStore } from '@/stores/tabs'
+import { useOnboardStore } from '@/stores/onboard'
 import { startInstall, cancelInstall } from '@/api/installer'
 import { checkOpenclawAlive } from '@/api/openclaw'
 
 const installerStore = useInstallerStore()
 const tabsStore = useTabsStore()
+const onboardStore = useOnboardStore()
 
 const logContainer = ref<HTMLElement | null>(null)
 const checking = ref(false)
@@ -94,10 +96,22 @@ function copyCommand() {
         <img src="/logo.jpg" class="w-16 h-16 rounded-[14px] object-cover shadow-lg" alt="logo" />
         <h1 class="text-2xl font-bold text-[#2d1f6e]">OpenClaw 未运行</h1>
         <p class="text-[13px] text-[#7b6aa8] text-center max-w-[340px] leading-relaxed">
-          检测到 OpenClaw 已安装，但 gateway 尚未启动。<br />
-          请打开终端，执行以下命令：
+          <template v-if="installerStore.isOnboarded">
+            检测到 OpenClaw 已安装，但 gateway 尚未启动。
+          </template>
+          <template v-else>
+            请先完成初始化配置，或复制下方命令到终端执行。
+          </template>
         </p>
       </div>
+
+      <!-- 未 onboard：优先在应用内打开初始化向导 -->
+      <template v-if="!installerStore.isOnboarded">
+        <button class="btn mb-4" @click="onboardStore.openWizard()">
+          在应用内初始化（推荐）
+        </button>
+        <p class="text-[11px] text-[#9b8ec4] mb-4">或复制以下命令到终端执行：</p>
+      </template>
 
       <!-- 命令展示 -->
       <div class="flex items-center gap-2 bg-[#1a1030] rounded-xl px-5 py-3.5 mb-6 w-full max-w-[340px]">

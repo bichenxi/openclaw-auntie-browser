@@ -9,6 +9,8 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AIConsole: typeof import('./components/AIConsole.vue')['default']
+    OnboardOverlay: typeof import('./components/OnboardOverlay.vue')['default']
+    OnboardWizardOverlay: typeof import('./components/OnboardWizardOverlay.vue')['default']
     OpenclawPage: typeof import('./views/OpenclawPage.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

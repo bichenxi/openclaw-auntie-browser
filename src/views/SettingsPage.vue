@@ -2,11 +2,13 @@
 import { useSettingsStore } from '@/stores/settings'
 import { useTabsStore } from '@/stores/tabs'
 import { useProfileStore, PROFILE_OPTIONS } from '@/stores/profile'
+import { useOnboardStore } from '@/stores/onboard'
 import { checkOpenclawAlive } from '@/api/openclaw'
 import { getOpenclawGatewayToken } from '@/api/skills'
 import { checkAndFixGatewayConfig, restartOpenclawGateway, type GatewayConfigStatus } from '@/api/gateway'
 
 const settings = useSettingsStore()
+const onboardStore = useOnboardStore()
 const store = useTabsStore()
 const profileStore = useProfileStore()
 
@@ -136,6 +138,60 @@ onMounted(refreshStatus)
 
     <!-- Body -->
     <div class="sp-body overflow-y-auto p-6 max-w-[700px] w-full mx-auto box-border">
+
+      <!-- ── OpenClaw 初始化（PTY 内嵌终端）── -->
+      <div class="bg-white border border-[#e8e2f4] rounded-[12px] p-5 mb-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-[7px]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            <span class="text-[13px] font-semibold text-secondary">OpenClaw 初始化</span>
+          </div>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 px-3.5 py-[7px] text-[12px] font-medium rounded-[8px] border cursor-pointer transition border-secondary/30 text-secondary bg-secondary/6 hover:bg-secondary/12"
+            @click="onboardStore.open()"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            配置向导（内嵌终端）
+          </button>
+        </div>
+        <p class="text-[11px] text-[#c4bdd8] m-0 mt-2 leading-[1.5]">
+          在应用内打开终端，与 <code class="bg-[#f5f3ff] text-secondary px-1 py-px rounded text-[10px]">openclaw onboard</code> TUI 实时交互。仅支持 macOS / Linux。
+        </p>
+      </div>
+
+      <!-- ── OpenClaw 初始化（卡片向导）── -->
+      <div class="bg-white border border-[#e8e2f4] rounded-[12px] p-5 mb-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-[7px]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
+            </svg>
+            <span class="text-[13px] font-semibold text-secondary">卡片向导</span>
+          </div>
+          <button
+            type="button"
+            class="flex items-center gap-1.5 px-3.5 py-[7px] text-[12px] font-medium rounded-[8px] border cursor-pointer transition border-secondary/30 text-secondary bg-secondary/6 hover:bg-secondary/12"
+            @click="onboardStore.openWizard()"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
+            </svg>
+            卡片向导
+          </button>
+        </div>
+        <p class="text-[11px] text-[#c4bdd8] m-0 mt-2 leading-[1.5]">
+          通过表单步骤配置密钥并初始化，无需终端，支持 Windows。
+        </p>
+      </div>
 
       <!-- ── 身份选择 ── -->
       <div class="bg-white border border-[#e8e2f4] rounded-[12px] p-5 mb-4">

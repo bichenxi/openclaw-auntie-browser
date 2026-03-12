@@ -65,7 +65,10 @@
       "Bash(cp /tmp/fnm-extract/fnm src-tauri/binaries/fnm-aarch64-apple-darwin)",
       "Bash(chmod +x src-tauri/binaries/fnm-aarch64-apple-darwin)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(git tag:*)",
+      "Bash(cat /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/.gitignore 2>/dev/null; echo \"---\"; cat /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/.gitattributes 2>/dev/null; echo \"---\"; git lfs ls-files 2>/dev/null | head -20; echo \"---\"; git -C /Users/smzdm/code-data/shiyan/openclaw-auntie-browser ls-files src-tauri/binaries/)"
     ]
   }
 }

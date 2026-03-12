@@ -72,7 +72,7 @@ enum NodeStrategy {
 }
 
 /// 返回最合适的登录 shell（$SHELL → zsh → bash → sh）
-fn detect_login_shell() -> String {
+pub(crate) fn detect_login_shell() -> String {
     if let Ok(s) = std::env::var("SHELL") {
         if std::path::Path::new(&s).exists() { return s; }
     }
@@ -623,3 +623,4 @@ pub async fn cancel_install(app: AppHandle) -> Result<(), String> {
     if let Some(tx) = guard.take() { let _ = tx.send(()); }
     Ok(())
 }
+

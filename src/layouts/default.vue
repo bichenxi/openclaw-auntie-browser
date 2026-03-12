@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import TabBar from '@/components/TabBar.vue'
+import OnboardOverlay from '@/components/OnboardOverlay.vue'
+import OnboardWizardOverlay from '@/components/OnboardWizardOverlay.vue'
 import OpenclawPage from '@/views/OpenclawPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import SkillsPage from '@/views/SkillsPage.vue'
@@ -11,6 +13,8 @@ const store = useTabsStore()
 
 <template>
   <div class="flex flex-col h-screen overflow-hidden">
+    <OnboardOverlay />
+    <OnboardWizardOverlay />
     <TabBar />
 
     <!-- 内容区 -->
