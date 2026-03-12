@@ -394,6 +394,12 @@ function goToChat() {
               </div>
             </template>
 
+            <!-- 等待第一个 prompt 的 loading -->
+            <div v-if="store.wizardRunning && !store.wizardPrompt" class="flex flex-col items-center gap-3 py-10">
+              <span class="w-7 h-7 border-[2.5px] border-secondary border-t-transparent rounded-full animate-spin" />
+              <span class="text-[13px] text-[#9b8ec4]">正在加载配置项…</span>
+            </div>
+
             <!-- 历史记录 -->
             <div
               v-for="(item, i) in store.wizardHistory"

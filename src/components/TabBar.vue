@@ -23,7 +23,7 @@ const disabledItem = computed(() =>
     <!-- 红绿灯占位拖拽区 -->
     <div class="drag-zone w-20 shrink-0" @mousedown="startDrag" />
 
-    <!-- 首页 Tab -->
+    <!-- 搜索 Tab -->
     <div
       class="tab-item flex items-center gap-1.5 px-3 min-w-auto rounded-t-lg cursor-pointer transition text-[#8a80a7] text-[13px] whitespace-nowrap relative mt-1.5"
       :class="[disabledItem, store.isHome
@@ -32,10 +32,10 @@ const disabledItem = computed(() =>
       @click="store.switchToHome()"
     >
       <svg class="shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <polyline points="9 22 9 12 15 12 15 22" />
+        <circle cx="11" cy="11" r="8" />
+        <line x1="21" y1="21" x2="16.65" y2="16.65" />
       </svg>
-      <span class="overflow-hidden text-ellipsis whitespace-nowrap leading-none">主页</span>
+      <span class="overflow-hidden text-ellipsis whitespace-nowrap leading-none">搜索</span>
     </div>
 
     <!-- 网页 Tabs -->

@@ -20,7 +20,7 @@ export const useTabsStore = defineStore('tabs', () => {
   const tabs = ref<TabItem[]>([])
   const activeTabId = ref<string | null>(null)
   const loadingTabId = ref<string | null>(null)
-  const specialView = ref<SpecialView | null>(null)
+  const specialView = ref<SpecialView | null>('openclaw')
   const sidebarOpen = ref(false)
   let tabIndex = 0
   let loadingTimer: ReturnType<typeof setTimeout> | null = null
