@@ -3,10 +3,12 @@ import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { useOnboardStore } from '@/stores/onboard'
+import { useInstallerStore } from '@/stores/installer'
 import { startOnboardPty, writeOnboardStdin, killOnboardPty } from '@/api/onboard'
 import { listen } from '@tauri-apps/api/event'
 
 const store = useOnboardStore()
+const installerStore = useInstallerStore()
 const terminalContainer = ref<HTMLElement | null>(null)
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -62,6 +64,9 @@ function startListeners() {
   listen<{ code: number }>('onboard:pty_exited', (e) => {
     store.ptyRunning = false
     store.ptyExitCode = e.payload.code
+    if (e.payload.code === 0) {
+      installerStore.completeOnboard()
+    }
   }).then((fn) => unlistens.push(fn))
 }
 

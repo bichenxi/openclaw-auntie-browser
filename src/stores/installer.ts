@@ -12,6 +12,7 @@ export interface InstallStep {
 const INITIAL_STEPS: InstallStep[] = [
   { id: 'install-node', label: '检测 / 安装 Node.js 环境', status: 'pending' },
   { id: 'install-openclaw', label: '安装 OpenClaw（npm install -g openclaw）', status: 'pending' },
+  { id: 'onboard', label: '初始化配置（openclaw onboard）', status: 'pending' },
 ]
 
 const MAX_LOG_LINES = 200
@@ -26,6 +27,8 @@ export const useInstallerStore = defineStore('installer', () => {
   const isInstalled = ref(false)
   /** openclaw onboard 已完成（openclaw.json 存在） */
   const isOnboarded = ref(false)
+  /** npm 安装完成，等待用户执行 onboard（在安装向导内展示第三步） */
+  const needOnboard = ref(false)
 
   let unlistens: Array<() => void> = []
 
@@ -34,6 +37,7 @@ export const useInstallerStore = defineStore('installer', () => {
     logs.value = []
     error.value = null
     done.value = false
+    needOnboard.value = false
   }
 
   function startListeners() {
@@ -52,11 +56,11 @@ export const useInstallerStore = defineStore('installer', () => {
       }
     }).then((fn) => unlistens.push(fn))
 
-    // npm 安装完成，需要用户手动运行 openclaw onboard
     listen('installer:need-onboard', () => {
       installing.value = false
-      isInstalled.value = true
-      isOnboarded.value = false
+      needOnboard.value = true
+      const step = steps.value.find((s) => s.id === 'onboard')
+      if (step) step.status = 'running'
     }).then((fn) => unlistens.push(fn))
 
     // 兼容旧版（future use）
@@ -76,9 +80,18 @@ export const useInstallerStore = defineStore('installer', () => {
     unlistens = []
   }
 
+  function completeOnboard() {
+    const step = steps.value.find((s) => s.id === 'onboard')
+    if (step) step.status = 'done'
+    needOnboard.value = false
+    isInstalled.value = true
+    isOnboarded.value = true
+    done.value = true
+  }
+
   return {
     steps, logs, installing, error, done,
-    isInstalled, isOnboarded,
-    resetSteps, startListeners, stopListeners,
+    isInstalled, isOnboarded, needOnboard,
+    resetSteps, completeOnboard, startListeners, stopListeners,
   }
 })

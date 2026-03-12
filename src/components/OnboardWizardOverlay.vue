@@ -10,10 +10,12 @@ import {
 import { restartOpenclawGateway } from '@/api/gateway'
 import { checkOpenclawAlive } from '@/api/openclaw'
 import { useTabsStore } from '@/stores/tabs'
+import { useInstallerStore } from '@/stores/installer'
 import { listen } from '@tauri-apps/api/event'
 
 const store = useOnboardStore()
 const tabsStore = useTabsStore()
+const installerStore = useInstallerStore()
 const unlistens = ref<Array<() => void>>([])
 const starting = ref(false)
 const sending = ref(false)
@@ -219,6 +221,7 @@ async function startGateway() {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
       store.wizardGatewayDone = true
       store.wizardStartingGateway = false
+      installerStore.completeOnboard()
     }
   }, 1500)
   setTimeout(() => {
@@ -417,7 +420,7 @@ function goToChat() {
                     @click="sendToggle()"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12" /></svg>
-                    切换
+                    切换✅
                   </button>
                   <div class="flex-1" />
                   <button
