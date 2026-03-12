@@ -68,7 +68,11 @@
       "Bash(git push:*)",
       "Bash(pnpm tsc:*)",
       "Bash(git tag:*)",
-      "Bash(cat /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/.gitignore 2>/dev/null; echo \"---\"; cat /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/.gitattributes 2>/dev/null; echo \"---\"; git lfs ls-files 2>/dev/null | head -20; echo \"---\"; git -C /Users/smzdm/code-data/shiyan/openclaw-auntie-browser ls-files src-tauri/binaries/)"
+      "Bash(cat /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/.gitignore 2>/dev/null; echo \"---\"; cat /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/.gitattributes 2>/dev/null; echo \"---\"; git lfs ls-files 2>/dev/null | head -20; echo \"---\"; git -C /Users/smzdm/code-data/shiyan/openclaw-auntie-browser ls-files src-tauri/binaries/)",
+      "Bash(ls -la /Users/smzdm/code-data/shiyan/openclaw-auntie-browser/*.md 2>/dev/null || echo \"No root-level .md files found\")",
+      "Bash(sed -i '' 's/\"version\": \"1\\\\.1\\\\.6\"/\"version\": \"1.1.7\"/' src-tauri/tauri.conf.json && sed -i '' 's/\"version\": \"1\\\\.1\\\\.4\"/\"version\": \"1.1.7\"/' package.json && sed -i '' '3s/version = \"1\\\\.1\\\\.3\"/version = \"1.1.7\"/' src-tauri/Cargo.toml)",
+      "Read(//Users/smzdm/**)",
+      "Read(//Users/smzdm/.openclaw/**)"
     ]
   }
 }
