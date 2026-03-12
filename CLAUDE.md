@@ -106,9 +106,9 @@ openclaw-skill/
 
 ## 图标
 
-项目 Logo 使用 `public/logo.jpg`（螃蟹女孩形象），在组件中用：
+项目 Logo 使用 `public/logo.png`（Oclaw 猫爪形象），在组件中用：
 ```html
-<img src="/logo.jpg" class="w-9 h-9 rounded-[10px] object-cover shadow" alt="logo" />
+<img src="/logo.png" class="w-9 h-9 rounded-[10px] object-cover shadow" alt="logo" />
 ```
 
 ## Tauri 配置注意

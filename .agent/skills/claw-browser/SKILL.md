@@ -202,9 +202,9 @@ src-tauri/src/
 
 ### 3.4 图标与 Logo
 
-- 项目 Logo：`public/logo.jpg`（螃蟹形象），用法：
+- 项目 Logo：`public/logo.png`（螃蟹形象），用法：
   ```html
-  <img src="/logo.jpg" class="w-9 h-9 rounded-[10px] object-cover shadow" alt="logo" />
+  <img src="/logo.png" class="w-9 h-9 rounded-[10px] object-cover shadow" alt="logo" />
   ```
 - 图标优先使用内联 SVG（`stroke="currentColor"`），或 `unplugin-icons` 的 `icon-local-*`。
 

@@ -71,7 +71,7 @@ const disabledItem = computed(() =>
         : 'hover:bg-secondary/6 hover:text-secondary']"
       @click="store.switchToSpecialView('openclaw')"
     >
-      <img class="w-[18px] h-[18px] rounded-[5px] object-cover shrink-0" src="/logo.jpg" alt="logo" />
+      <img class="w-[18px] h-[18px] rounded-[5px] object-cover shrink-0" src="/logo.png" alt="logo" />
       <span class="overflow-hidden text-ellipsis whitespace-nowrap leading-none">OpenClaw</span>
     </div>
 

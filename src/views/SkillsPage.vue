@@ -318,7 +318,7 @@ onMounted(load)
                 : 'bg-[rgba(245,158,11,0.05)] border border-[rgba(245,158,11,0.2)]'"
               @click="builtinInstalled && selectSkill(skills.find(s => s.name === 'claw-browser-control')!)"
             >
-              <img src="/logo.jpg" class="w-6 h-6 rounded-[6px] object-cover shrink-0 shadow-sm" alt="logo" />
+              <img src="/logo.png" class="w-6 h-6 rounded-[6px] object-cover shrink-0 shadow-sm" alt="logo" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
                   <span class="text-[12px] font-medium text-[#2d2b3d] truncate">claw-browser-control</span>

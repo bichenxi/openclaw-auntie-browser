@@ -414,7 +414,7 @@ function goToChat() {
             <!-- 未启动：开始按钮 -->
             <template v-if="!store.wizardRunning && !store.wizardPrompt && store.wizardExitCode === null && !store.wizardStartingGateway && !store.wizardGatewayDone">
               <div class="flex flex-col items-center gap-4 py-8">
-                <img src="/logo.jpg" class="w-14 h-14 rounded-[12px] object-cover shadow-lg" alt="logo" />
+                <img src="/logo.png" class="w-14 h-14 rounded-[12px] object-cover shadow-lg" alt="logo" />
                 <p class="text-[13px] text-[#6b5f8a] text-center max-w-[360px] leading-relaxed">
                   将运行 <code class="bg-[#f0ecfa] px-1.5 py-px rounded text-[11px]">openclaw onboard</code> 进行初始化配置，完成后自动启动网关。
                 </p>

@@ -94,7 +94,7 @@ function copyCommand() {
     <!-- ── 已安装但未运行（非安装流程内的 needOnboard 状态） ── -->
     <template v-if="installerStore.isInstalled && !installerStore.installing && !installerStore.needOnboard">
       <div class="flex flex-col items-center gap-3 mb-6">
-        <img src="/logo.jpg" class="w-14 h-14 rounded-[12px] object-cover shadow-lg" alt="logo" />
+        <img src="/logo.png" class="w-14 h-14 rounded-[12px] object-cover shadow-lg" alt="logo" />
         <h1 class="text-[22px] font-bold text-[#2d1f6e] m-0">OpenClaw 未运行</h1>
         <p class="text-[13px] text-[#7b6aa8] text-center max-w-[380px] leading-relaxed m-0">
           选择一种方式启动配置向导，完成后将自动启动网关。
@@ -183,7 +183,7 @@ function copyCommand() {
     <template v-else>
       <!-- Header -->
       <div class="flex flex-col items-center gap-3 mb-8">
-        <img src="/logo.jpg" class="w-16 h-16 rounded-[14px] object-cover shadow-lg" alt="logo" />
+        <img src="/logo.png" class="w-16 h-16 rounded-[14px] object-cover shadow-lg" alt="logo" />
         <h1 class="text-2xl font-bold text-[#2d1f6e]">安装 OpenClaw</h1>
         <p class="text-[13px] text-[#7b6aa8] text-center max-w-[360px] leading-relaxed">
           Oclaw 需要 OpenClaw 本地 gateway 才能工作。<br />

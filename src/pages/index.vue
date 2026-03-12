@@ -30,7 +30,7 @@ function handleKeydown(e: KeyboardEvent) {
       <div class="flex items-center gap-[14px]">
         <img
           class="w-14 h-14 rounded-[14px] object-cover shadow-[0_4px_20px_rgba(0,0,0,0.12)]"
-          src="/logo.jpg"
+          src="/logo.png"
           alt="logo"
         />
         <div class="flex flex-col">

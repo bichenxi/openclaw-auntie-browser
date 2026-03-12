@@ -52,7 +52,7 @@ const store = useTabsStore()
             : 'bg-[rgba(245,242,252,0.92)] border-[#e8e2f4] hover:bg-[rgba(124,92,252,0.06)]'"
           @click="store.toggleSidebar()"
         >
-          <img src="/logo.jpg" class="w-5 h-5 rounded-[5px] object-cover shadow-sm shrink-0" alt="AI" />
+          <img src="/logo.png" class="w-5 h-5 rounded-[5px] object-cover shadow-sm shrink-0" alt="AI" />
           <svg
             class="transition-transform duration-200 text-[#9b8ec4]"
             :class="store.sidebarOpen ? '' : 'rotate-180'"

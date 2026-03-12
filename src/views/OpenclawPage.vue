@@ -171,7 +171,7 @@ watch(tempMessages, scrollToBottom, { deep: true })
       <div class="flex items-center gap-3">
         <img
           class="w-9 h-9 rounded-[10px] object-cover shadow-[0_2px_10px_rgba(0,0,0,0.12)] shrink-0"
-          src="/logo.jpg"
+          src="/logo.png"
           alt="logo"
         />
         <div class="flex flex-col">
@@ -263,7 +263,7 @@ watch(tempMessages, scrollToBottom, { deep: true })
       <!-- ── 普通模式 ── -->
       <template v-if="!tempMode">
         <div v-if="messages.length === 0" class="flex-1 flex flex-col items-center justify-center gap-3 text-[#9b8ec4] py-10">
-          <img class="w-[72px] h-[72px] rounded-[20px] object-cover shadow-[0_4px_20px_rgba(0,0,0,0.1)] opacity-85" src="/logo.jpg" alt="logo" />
+          <img class="w-[72px] h-[72px] rounded-[20px] object-cover shadow-[0_4px_20px_rgba(0,0,0,0.1)] opacity-85" src="/logo.png" alt="logo" />
           <p class="text-[14px] text-[#6b7280] m-0">向 OpenClaw 发送消息，开始对话</p>
           <p class="text-[12px] text-[#9b8ec4] m-0 text-center">支持自然语言指令，如「帮我搜索小红书上的旅游攻略」</p>
         </div>
