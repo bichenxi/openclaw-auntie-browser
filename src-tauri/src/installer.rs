@@ -609,9 +609,35 @@ pub fn check_openclaw_installed(app: AppHandle) -> OpenclawInstallStatus {
         .map(|h| h.join(".openclaw").join("openclaw.json").exists())
         .unwrap_or(false);
 
-    let npm_installed = onboarded || app.path().app_data_dir()
-        .map(|d| d.join("openclaw-npm-installed.flag").exists())
+    let flag_path = app.path().app_data_dir()
+        .ok()
+        .map(|d| d.join("openclaw-npm-installed.flag"));
+
+    let flag_exists = flag_path.as_ref()
+        .map(|p| p.exists())
         .unwrap_or(false);
+
+    // flag 存在时，用登录 shell 验证 openclaw 命令是否真实可执行，
+    // 避免卸载后残留 flag 文件导致误判为已安装。
+    let npm_installed = if onboarded {
+        true
+    } else if flag_exists {
+        let shell = detect_login_shell();
+        let actually_installed = std::process::Command::new(&shell)
+            .args(["-l", "-c", "openclaw --version"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !actually_installed {
+            // 清理残留 flag，下次直接走安装流程
+            if let Some(p) = &flag_path {
+                let _ = std::fs::remove_file(p);
+            }
+        }
+        actually_installed
+    } else {
+        false
+    };
 
     OpenclawInstallStatus { npm_installed, onboarded }
 }
