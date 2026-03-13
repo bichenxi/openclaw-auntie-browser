@@ -80,8 +80,17 @@ pub async fn run_onboard(app: AppHandle, params: OnboardParams) -> Result<(), St
 
     let _ = app.emit("onboard:log", OnboardLogPayload { line: format!("> {}", cmd_str) });
 
+    #[cfg(not(target_os = "windows"))]
     let mut child = Command::new(&shell)
         .args(["-l", "-c", &cmd_str])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("启动 onboard 失败：{}", e))?;
+
+    #[cfg(target_os = "windows")]
+    let mut child = Command::new("cmd")
+        .args(["/C", &cmd_str])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -335,43 +344,70 @@ fn wizard_extra_path_dirs(app: &AppHandle) -> Vec<String> {
     let home = app.path().home_dir().ok()
         .and_then(|p| p.to_str().map(String::from))
         .or_else(|| std::env::var("HOME").ok())
+        .or_else(|| std::env::var("USERPROFILE").ok())
         .unwrap_or_default();
-    let mut dirs = vec![
-        format!("{}/.local/bin", home),
-    ];
-    #[cfg(target_os = "macos")]
+    let mut dirs: Vec<String> = Vec::new();
+
+    #[cfg(not(target_os = "windows"))]
     {
+        dirs.push(format!("{}/.local/bin", home));
+        #[cfg(target_os = "macos")]
         dirs.push("/opt/homebrew/bin".to_string());
+        dirs.push("/usr/local/bin".to_string());
     }
-    dirs.push("/usr/local/bin".to_string());
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            dirs.push(format!("{}\\npm", appdata));
+            dirs.push(format!("{}\\nvm", appdata));
+        }
+    }
+
+    let openclaw_bin = if cfg!(windows) { "openclaw.cmd" } else { "openclaw" };
 
     // 扫描 nvm 所有版本
+    #[cfg(not(target_os = "windows"))]
     let nvm_versions = std::path::Path::new(&home).join(".nvm").join("versions").join("node");
+    #[cfg(target_os = "windows")]
+    let nvm_versions = std::env::var("APPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("nvm"))
+        .unwrap_or_else(|_| std::path::PathBuf::from(&home).join("AppData").join("Roaming").join("nvm"));
     if let Ok(rd) = std::fs::read_dir(&nvm_versions) {
         for e in rd.flatten() {
-            let bin = e.path().join("bin");
-            if bin.join("openclaw").exists() || bin.join("openclaw.cmd").exists() {
+            let bin = if cfg!(windows) { e.path() } else { e.path().join("bin") };
+            if bin.join(openclaw_bin).exists() {
                 dirs.push(bin.to_string_lossy().to_string());
             }
         }
     }
+
     // 扫描系统 fnm
+    #[cfg(not(target_os = "windows"))]
     let fnm_base = std::path::Path::new(&home).join(".local").join("share").join("fnm").join("node-versions");
+    #[cfg(target_os = "windows")]
+    let fnm_base = std::env::var("LOCALAPPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("fnm_multishells"))
+        .unwrap_or_else(|_| std::path::PathBuf::from(&home).join("AppData").join("Local").join("fnm_multishells"));
     if let Ok(rd) = std::fs::read_dir(&fnm_base) {
         for e in rd.flatten() {
-            let bin = e.path().join("installation").join("bin");
-            if bin.join("openclaw").exists() || bin.join("openclaw.cmd").exists() {
+            let bin = if cfg!(windows) { e.path() } else { e.path().join("installation").join("bin") };
+            if bin.join(openclaw_bin).exists() {
                 dirs.push(bin.to_string_lossy().to_string());
             }
         }
     }
+
     // 扫描内置 fnm
     if let Ok(app_data) = app.path().app_data_dir() {
         let bundled = app_data.join("fnm").join("node-versions");
         if let Ok(rd) = std::fs::read_dir(&bundled) {
             for e in rd.flatten() {
-                let bin = e.path().join("installation").join("bin");
-                if bin.join("openclaw").exists() || bin.join("openclaw.cmd").exists() {
+                let bin = if cfg!(windows) {
+                    e.path().join("installation")
+                } else {
+                    e.path().join("installation").join("bin")
+                };
+                if bin.join(openclaw_bin).exists() {
                     dirs.push(bin.to_string_lossy().to_string());
                 }
             }

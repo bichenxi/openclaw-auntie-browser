@@ -65,41 +65,58 @@ enum NodeStrategy {
     SystemNode(u32),
     /// 系统已安装 fnm（登录 shell 可见），用系统 fnm 管理 node 22
     SystemFnm,
-    /// 系统已安装 nvm（~/.nvm/nvm.sh 存在），用 nvm 管理 node 22
+    /// 系统已安装 nvm，用 nvm 管理 node 22
+    /// Unix: ~/.nvm/nvm.sh 存在；Windows: nvm-windows（%APPDATA%\nvm\nvm.exe）
     SystemNvm,
     /// 无版本管理工具，使用 app 内置 fnm（独立隔离目录）
     BundledFnm,
 }
 
-/// 返回最合适的登录 shell（$SHELL → zsh → bash → sh）
+/// 返回最合适的登录 shell。
+/// Unix: $SHELL → zsh → bash → sh；Windows: %COMSPEC% → cmd.exe
 pub(crate) fn detect_login_shell() -> String {
-    if let Ok(s) = std::env::var("SHELL") {
-        if std::path::Path::new(&s).exists() { return s; }
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
     }
-    for sh in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
-        if std::path::Path::new(sh).exists() { return sh.to_string(); }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(s) = std::env::var("SHELL") {
+            if std::path::Path::new(&s).exists() { return s; }
+        }
+        for sh in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
+            if std::path::Path::new(sh).exists() { return sh.to_string(); }
+        }
+        "/bin/sh".to_string()
     }
-    "/bin/sh".to_string()
 }
 
-/// 通过登录 shell 检测 node major 版本，返回 None 表示未安装或无法检测。
+/// 通过系统 shell 运行单条命令并返回 Output（跨平台）。
+/// Unix: 用登录 shell `-l -c`；Windows: 用 `cmd /C`。
+pub(crate) fn run_in_shell(cmd: &str) -> std::io::Result<std::process::Output> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd").args(["/C", cmd]).output()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell = detect_login_shell();
+        std::process::Command::new(&shell).args(["-l", "-c", cmd]).output()
+    }
+}
+
+/// 检测 node major 版本，返回 None 表示未安装或无法检测。
 fn detect_system_node_major() -> Option<u32> {
-    let shell = detect_login_shell();
-    let out = std::process::Command::new(&shell)
-        .args(["-l", "-c", "node --version"])
-        .output().ok()?;
+    let out = run_in_shell("node --version").ok()?;
     if !out.status.success() { return None; }
     let s = String::from_utf8_lossy(&out.stdout);
     let trimmed = s.trim().trim_start_matches('v');
     trimmed.split('.').next()?.parse::<u32>().ok()
 }
 
-/// 通过登录 shell 检测 fnm 是否可用（binary 在 PATH 中）
+/// 检测 fnm 是否可用（binary 在 PATH 中）
 fn detect_system_fnm() -> bool {
-    let shell = detect_login_shell();
-    std::process::Command::new(&shell)
-        .args(["-l", "-c", "fnm --version"])
-        .output()
+    run_in_shell("fnm --version")
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -107,8 +124,20 @@ fn detect_system_fnm() -> bool {
 /// 综合检测，返回最合适的安装策略。
 /// 优先使用版本管理器（nvm/fnm），确保安装后能设为默认版本。
 fn detect_node_strategy(home_dir: &std::path::Path) -> NodeStrategy {
-    // 1. 系统 nvm？优先，安装 node 22 并设为默认
-    if home_dir.join(".nvm").join("nvm.sh").exists() {
+    // 1. 系统 nvm？
+    //    Unix: ~/.nvm/nvm.sh 存在
+    //    Windows: nvm-windows 在 %APPDATA%\nvm 或 PATH 中
+    #[cfg(not(target_os = "windows"))]
+    let has_nvm = home_dir.join(".nvm").join("nvm.sh").exists();
+    #[cfg(target_os = "windows")]
+    let has_nvm = {
+        let nvm_exe = std::env::var("APPDATA")
+            .map(|a| std::path::PathBuf::from(a).join("nvm").join("nvm.exe"))
+            .unwrap_or_default();
+        nvm_exe.exists()
+            || run_in_shell("nvm version").map(|o| o.status.success()).unwrap_or(false)
+    };
+    if has_nvm {
         return NodeStrategy::SystemNvm;
     }
     // 2. 系统 fnm？
@@ -409,9 +438,47 @@ fn add_node_bin_to_shell_profile(app: &AppHandle, node_bin_dir: &std::path::Path
 }
 
 #[cfg(target_os = "windows")]
-fn try_symlink_from_which(_: &AppHandle, _: &str, _: &std::path::Path) {}
+fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::path::Path) {
+    let verified = run_in_shell("openclaw --version")
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if verified {
+        emit_log(app, "openclaw 已在系统 PATH 中，命令行可直接使用。");
+    } else {
+        emit_log(app, "⚠ openclaw 尚未在系统 PATH 中。");
+        emit_log(app, "npm 全局安装目录通常在 %APPDATA%\\npm，请确认该目录已加入系统 PATH。");
+    }
+}
+
 #[cfg(target_os = "windows")]
-fn try_symlink_bundled_fnm(_: &AppHandle, _: &str, _: &std::path::Path) {}
+fn try_symlink_bundled_fnm(app: &AppHandle, fnm_dir: &str, _home_dir: &std::path::Path) {
+    let node_versions = std::path::Path::new(fnm_dir).join("node-versions");
+    let bin_dir = std::fs::read_dir(&node_versions)
+        .ok()
+        .and_then(|mut rd| {
+            rd.find(|e| {
+                e.as_ref().ok()
+                    .and_then(|e| e.file_name().into_string().ok())
+                    .map(|n| n.starts_with("v22."))
+                    .unwrap_or(false)
+            })
+        })
+        .and_then(|e| e.ok())
+        .map(|e| e.path().join("installation"));
+
+    match bin_dir {
+        Some(bin) => {
+            emit_log(app, &format!(
+                "内置 fnm Node.js 位于 {}",
+                bin.display()
+            ));
+            emit_log(app, "如需在命令行中直接使用 openclaw，请将上述目录添加到系统 PATH 环境变量。");
+        }
+        None => {
+            emit_log(app, "⚠ 未在内置 fnm 目录中找到 Node.js，请确认安装成功。");
+        }
+    }
+}
 
 // ─── 安装标记文件 ──────────────────────────────────────────────────────────
 
@@ -430,6 +497,7 @@ async fn run_install_steps(
     cancel_rx: &mut tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let home_dir = app.path().home_dir().map_err(|e| e.to_string())?;
+    #[cfg(not(target_os = "windows"))]
     let nvm_sh = home_dir.join(".nvm").join("nvm.sh");
 
     let strategy = detect_node_strategy(&home_dir);
@@ -467,7 +535,10 @@ async fn run_install_steps(
         }
         NodeStrategy::SystemNvm => {
             emit_log(app, "正在通过系统 nvm 安装 Node.js 22 并设为默认版本...");
+            #[cfg(not(target_os = "windows"))]
             let cmd = format!("source '{}' && nvm install 22 && nvm alias default 22", nvm_sh.display());
+            #[cfg(target_os = "windows")]
+            let cmd = "nvm install 22 && nvm use 22".to_string();
             match run_login_shell_step(app, &cmd, cancel_rx).await {
                 Ok(()) => emit_step(app, step1, "done"),
                 Err(e) => { emit_step(app, step1, "error"); emit_error(app, step1, &e); return Err(e); }
@@ -493,7 +564,10 @@ async fn run_install_steps(
         NodeStrategy::SystemFnm =>
             run_login_shell_step(app, "fnm exec --using=22 -- npm install -g openclaw --no-update-notifier --no-fund", cancel_rx).await,
         NodeStrategy::SystemNvm => {
+            #[cfg(not(target_os = "windows"))]
             let cmd = format!("source '{}' && nvm exec 22 npm install -g openclaw --no-update-notifier --no-fund", nvm_sh.display());
+            #[cfg(target_os = "windows")]
+            let cmd = "npm install -g openclaw --no-update-notifier --no-fund".to_string();
             run_login_shell_step(app, &cmd, cancel_rx).await
         }
         NodeStrategy::BundledFnm =>
@@ -534,10 +608,7 @@ async fn run_install_steps(
     write_installed_marker(app);
 
     // ── 最终验证：在登录 shell 中确认 openclaw 可访问 ──────────────────────
-    let shell = detect_login_shell();
-    let verified = std::process::Command::new(&shell)
-        .args(["-l", "-c", "openclaw --version"])
-        .output()
+    let verified = run_in_shell("openclaw --version")
         .map(|o| o.status.success())
         .unwrap_or(false);
 
@@ -572,8 +643,13 @@ pub async fn start_install(app: AppHandle) -> Result<(), String> {
     let fnm_dir = app.path().app_data_dir()
         .map(|p| p.join("fnm").to_string_lossy().to_string())
         .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            format!("{home}/.local/share/claw-browser/fnm")
+            let home = std::env::var("HOME")
+                .or_else(|_| std::env::var("USERPROFILE"))
+                .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
+            #[cfg(target_os = "windows")]
+            { format!("{}\\AppData\\Local\\claw-browser\\fnm", home) }
+            #[cfg(not(target_os = "windows"))]
+            { format!("{}/.local/share/claw-browser/fnm", home) }
         });
 
     let app2 = app.clone();
@@ -617,15 +693,12 @@ pub fn check_openclaw_installed(app: AppHandle) -> OpenclawInstallStatus {
         .map(|p| p.exists())
         .unwrap_or(false);
 
-    // flag 存在时，用登录 shell 验证 openclaw 命令是否真实可执行，
+    // flag 存在时，验证 openclaw 命令是否真实可执行，
     // 避免卸载后残留 flag 文件导致误判为已安装。
     let npm_installed = if onboarded {
         true
     } else if flag_exists {
-        let shell = detect_login_shell();
-        let actually_installed = std::process::Command::new(&shell)
-            .args(["-l", "-c", "openclaw --version"])
-            .output()
+        let actually_installed = run_in_shell("openclaw --version")
             .map(|o| o.status.success())
             .unwrap_or(false);
         if !actually_installed {
