@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { useSettingsStore } from '@/stores/settings'
 import { useTabsStore } from '@/stores/tabs'
-import { useProfileStore, PROFILE_OPTIONS } from '@/stores/profile'
 import { useOnboardStore } from '@/stores/onboard'
 import { checkOpenclawAlive } from '@/api/openclaw'
 import { getOpenclawGatewayToken } from '@/api/skills'
@@ -10,13 +9,11 @@ import { checkAndFixGatewayConfig, restartOpenclawGateway, type GatewayConfigSta
 const settings = useSettingsStore()
 const onboardStore = useOnboardStore()
 const store = useTabsStore()
-const profileStore = useProfileStore()
 
 const tokenInput = ref(settings.bearerToken)
 const sessionKeyInput = ref(settings.sessionKey)
 const baseUrlInput = ref(settings.baseUrl)
 const saved = ref(false)
-const switching = ref(false)
 const openclawAlive = ref(false)
 const checkingAlive = ref(false)
 const fetchingToken = ref(false)
@@ -56,25 +53,9 @@ async function doRestartGateway() {
   }
 }
 
-const profileLabels: Record<string, string> = {
-  default: '默认',
-  work: '工作',
-  personal: '个人',
-}
-
 watch(() => settings.sessionKey, (val) => {
   sessionKeyInput.value = val
 })
-
-async function selectProfile(name: string) {
-  if (name === profileStore.currentProfile || switching.value) return
-  switching.value = true
-  try {
-    await profileStore.switchProfile(name)
-  } finally {
-    switching.value = false
-  }
-}
 
 async function refreshStatus() {
   checkingAlive.value = true
@@ -182,58 +163,22 @@ onMounted(refreshStatus)
         </div>
       </div>
 
-      <!-- ── 身份选择 ── -->
-      <div class="bg-white border border-[#e8e2f4] rounded-[12px] p-5 mb-4">
-        <div class="flex items-center gap-[7px] text-[13px] font-semibold text-secondary mb-3">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-          当前身份
-        </div>
-        <div class="flex gap-2 mb-3">
-          <button
-            v-for="name in PROFILE_OPTIONS"
-            :key="name"
-            type="button"
-            class="flex-1 py-2.5 text-[13px] font-medium rounded-[9px] border cursor-pointer transition disabled:opacity-60 disabled:cursor-not-allowed"
-            :class="profileStore.currentProfile === name
-              ? 'text-secondary border-secondary/35 bg-secondary/10 shadow-[0_0_0_3px_rgba(95,71,206,0.08)]'
-              : 'text-[#8a80a7] border-[#e8e2f4] bg-transparent hover:text-secondary hover:border-secondary/25 hover:bg-secondary/5'"
-            :disabled="switching"
-            @click="selectProfile(name)"
-          >
-            {{ profileLabels[name] ?? name }}
-          </button>
-        </div>
-        <p class="text-[11px] text-[#c4bdd8] m-0 leading-[1.5]">
-          切换身份会关闭所有当前网页标签，并使用独立的浏览器数据目录。
-        </p>
-      </div>
-
-      <!-- ── 会话配置（per-profile）── -->
+      <!-- ── 会话配置 ── -->
       <div class="bg-white border border-[#e8e2f4] rounded-[12px] overflow-hidden mb-4">
         <div class="flex items-center gap-[7px] px-5 py-3.5 border-b border-[#f0ecfa]">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
           </svg>
           <span class="text-[13px] font-semibold text-secondary">会话配置</span>
-          <span class="ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] text-[11px] font-medium bg-secondary/8 text-secondary">
-            <span
-              class="w-1.5 h-1.5 rounded-full bg-secondary"
-              :class="{ 'animate-[sp-pulse_1.5s_ease-in-out_infinite]': !switching }"
-            />
-            {{ profileLabels[profileStore.currentProfile] ?? profileStore.currentProfile }}
-          </span>
         </div>
         <div class="p-5">
           <label class="block text-[12px] font-semibold text-[#4a4568] mb-1.5">OPENCLAW_SESSION_KEY</label>
-          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2.5">每个身份拥有独立的会话标识，切换身份后此处自动更新。</p>
+          <p class="text-[11px] text-[#9b8ec4] m-0 mb-2.5">会话标识，用于区分不同的对话上下文。技能同步后会自动刷新。</p>
           <input
             v-model="sessionKeyInput"
             type="text"
             class="w-full px-3.5 py-2.5 text-[13px] font-[inherit] border-[1.5px] border-[#e8e2f4] rounded-[8px] outline-none box-border text-[#1f1f2e] bg-[#fafafa] transition placeholder-[#c4bdd8] focus:border-[#7c5cfc] focus:bg-white focus:shadow-[0_0_0_3px_rgba(95,71,206,0.08)]"
-            :placeholder="`agent:main:${profileStore.currentProfile === 'default' ? 'main' : profileStore.currentProfile}`"
+            placeholder="agent:main:main"
           />
         </div>
       </div>
