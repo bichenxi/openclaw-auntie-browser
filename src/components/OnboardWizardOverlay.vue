@@ -11,11 +11,13 @@ import { restartOpenclawGateway } from '@/api/gateway'
 import { checkOpenclawAlive } from '@/api/openclaw'
 import { useTabsStore } from '@/stores/tabs'
 import { useInstallerStore } from '@/stores/installer'
+import { useAutoSetup } from '@/composables/useAutoSetup'
 import { listen } from '@tauri-apps/api/event'
 
 const store = useOnboardStore()
 const tabsStore = useTabsStore()
 const installerStore = useInstallerStore()
+const { autoSetup } = useAutoSetup()
 const unlistens = ref<Array<() => void>>([])
 const starting = ref(false)
 const sending = ref(false)
@@ -23,6 +25,8 @@ const sending = ref(false)
 const waitingNext = ref(false)
 let sendingTimer: ReturnType<typeof setTimeout> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const autoConfiguring = ref(false)
 
 /** multiselect 本地光标与勾选状态（不依赖后端 selected 检测） */
 const msCursor = ref(0)
@@ -344,7 +348,9 @@ function handleClose() {
   store.closeWizard()
 }
 
-function goToChat() {
+async function goToChat() {
+  autoConfiguring.value = true
+  await autoSetup()
   store.closeWizard()
   tabsStore.switchToSpecialView('openclaw')
 }
@@ -679,10 +685,12 @@ function goToChat() {
             <button
               v-if="store.wizardGatewayDone"
               type="button"
-              class="px-5 py-2 text-[13px] font-medium text-white rounded-[8px] cursor-pointer transition bg-[linear-gradient(135deg,#22c55e_0%,#16a34a_100%)] shadow-[0_2px_8px_rgba(34,197,94,0.2)]"
+              class="flex items-center gap-2 px-5 py-2 text-[13px] font-medium text-white rounded-[8px] cursor-pointer transition bg-[linear-gradient(135deg,#22c55e_0%,#16a34a_100%)] shadow-[0_2px_8px_rgba(34,197,94,0.2)] disabled:opacity-70 disabled:cursor-not-allowed"
+              :disabled="autoConfiguring"
               @click="goToChat()"
             >
-              开始使用
+              <span v-if="autoConfiguring" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              {{ autoConfiguring ? '配置中...' : '开始使用' }}
             </button>
             <button
               v-else-if="store.wizardError && !store.wizardRunning && !store.wizardStartingGateway"
