@@ -172,6 +172,41 @@ fn detect_node_strategy(home_dir: &std::path::Path) -> NodeStrategy {
     NodeStrategy::BundledFnm
 }
 
+// ─── Windows 工具路径补全 ────────────────────────────────────────────────────
+
+/// Windows: 在 Program Files 等常见路径中查找 Git for Windows，
+/// 返回 `Some(augmented_PATH)` 以便子进程能找到 `git.exe`。
+/// 如果 git 已在 PATH 中或未找到安装目录，返回 None。
+#[cfg(target_os = "windows")]
+fn augmented_path_with_git() -> Option<String> {
+    if std::process::Command::new("git")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+    {
+        return None;
+    }
+    let current = std::env::var("PATH").unwrap_or_default();
+    let pf = std::env::var("PROGRAMFILES").unwrap_or_else(|_| r"C:\Program Files".to_string());
+    let pf86 = std::env::var("PROGRAMFILES(X86)")
+        .unwrap_or_else(|_| r"C:\Program Files (x86)".to_string());
+    let user = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let candidates = [
+        format!(r"{}\Git\cmd", pf),
+        format!(r"{}\Git\cmd", pf86),
+        format!(r"{}\Programs\Git\cmd", user),
+    ];
+    for dir in &candidates {
+        if std::path::Path::new(dir).join("git.exe").exists() {
+            return Some(format!("{};{}", dir, current));
+        }
+    }
+    None
+}
+
 // ─── 命令执行（流式输出）─────────────────────────────────────────────────────
 
 /// npm notice / npm warn EBADENGINE 等纯噪音行，不向前端显示。
@@ -200,10 +235,14 @@ async fn run_login_shell_step(
     };
 
     #[cfg(target_os = "windows")]
-    let mut child = Command::new("cmd")
-        .args(["/C", cmd_str])
-        .stdout(Stdio::piped()).stderr(Stdio::piped())
-        .spawn().map_err(|e| format!("启动命令失败：{}", e))?;
+    let mut child = {
+        let mut b = Command::new("cmd");
+        b.args(["/C", cmd_str]).stdout(Stdio::piped()).stderr(Stdio::piped());
+        if let Some(path) = augmented_path_with_git() {
+            b.env("PATH", path);
+        }
+        b.spawn().map_err(|e| format!("启动命令失败：{}", e))?
+    };
 
     let mut out = BufReader::new(child.stdout.take().unwrap()).lines();
     let mut err = BufReader::new(child.stderr.take().unwrap()).lines();
@@ -243,6 +282,10 @@ async fn run_step(
 
     let mut cmd = app.shell().sidecar("fnm").map_err(|e| e.to_string())?;
     cmd = cmd.args(["--fnm-dir", fnm_dir, "--node-dist-mirror", NODE_DIST_MIRROR]).args(args);
+    #[cfg(target_os = "windows")]
+    if let Some(path) = augmented_path_with_git() {
+        cmd = cmd.env("PATH", path);
+    }
     let (mut rx, child) = cmd.spawn().map_err(|e| e.to_string())?;
 
     loop {
@@ -455,6 +498,34 @@ fn add_node_bin_to_shell_profile(app: &AppHandle, node_bin_dir: &std::path::Path
     }
 }
 
+/// Windows: 通过 PowerShell 将目录列表追加到用户 PATH（不影响系统 PATH）。
+/// 仅追加当前 PATH 中尚未包含的目录，避免重复。
+#[cfg(target_os = "windows")]
+fn try_add_to_user_path_windows(app: &AppHandle, dirs: &[String]) -> bool {
+    let ps_script = format!(
+        r#"$p = [Environment]::GetEnvironmentVariable('PATH','User'); $toAdd = @({dirs_quoted}); foreach($d in $toAdd){{ if($p -and $p.Split(';') -contains $d){{ continue }}; if($p){{ $p = "$p;$d" }} else {{ $p = $d }} }}; [Environment]::SetEnvironmentVariable('PATH',$p,'User')"#,
+        dirs_quoted = dirs
+            .iter()
+            .map(|d| format!("'{}'", d.replace('\'', "''")))
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    let ok = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map(|o| {
+            if !o.status.success() {
+                let msg = String::from_utf8_lossy(&o.stderr);
+                emit_log(app, &format!("PowerShell 修改 PATH 失败：{}", msg.trim()));
+            }
+            o.status.success()
+        })
+        .unwrap_or(false);
+    ok
+}
+
 #[cfg(target_os = "windows")]
 fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::path::Path) {
     let verified = run_in_shell("openclaw --version")
@@ -462,10 +533,45 @@ fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::pa
         .unwrap_or(false);
     if verified {
         emit_log(app, "openclaw 已在系统 PATH 中，命令行可直接使用。");
-    } else {
-        emit_log(app, "⚠ openclaw 尚未在系统 PATH 中。");
-        emit_log(app, "npm 全局安装目录通常在 %APPDATA%\\npm，请确认该目录已加入系统 PATH。");
+        return;
     }
+
+    // 尝试找到 openclaw 所在目录并自动加入用户 PATH
+    let appdata = std::env::var("APPDATA").unwrap_or_default();
+    let fnm_node_dir = std::path::PathBuf::from(&appdata).join("fnm").join("node-versions");
+    let mut dirs_to_add: Vec<String> = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&fnm_node_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("v22.") {
+                let install_dir = entry.path().join("installation");
+                if install_dir.exists() {
+                    dirs_to_add.push(install_dir.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    let npm_global = std::path::PathBuf::from(&appdata).join("npm");
+    if npm_global.exists() {
+        dirs_to_add.push(npm_global.to_string_lossy().to_string());
+    }
+
+    if !dirs_to_add.is_empty() {
+        let added = try_add_to_user_path_windows(app, &dirs_to_add);
+        if added {
+            emit_log(app, "已自动将 Node.js 和 openclaw 路径添加到用户 PATH（重启终端后生效）。");
+        } else {
+            emit_log(app, "⚠ 自动修改 PATH 失败，请手动将以下目录添加到系统 PATH 环境变量：");
+            for d in &dirs_to_add {
+                emit_log(app, &format!("  {}", d));
+            }
+        }
+    }
+
+    emit_log(app, "");
+    emit_log(app, "提示：如需在终端中使用 fnm 管理 Node 版本，请在 PowerShell 配置文件中添加：");
+    emit_log(app, "  fnm env --use-on-cd | Out-String | Invoke-Expression");
 }
 
 #[cfg(target_os = "windows")]
@@ -486,11 +592,14 @@ fn try_symlink_bundled_fnm(app: &AppHandle, fnm_dir: &str, _home_dir: &std::path
 
     match bin_dir {
         Some(bin) => {
-            emit_log(app, &format!(
-                "内置 fnm Node.js 位于 {}",
-                bin.display()
-            ));
-            emit_log(app, "如需在命令行中直接使用 openclaw，请将上述目录添加到系统 PATH 环境变量。");
+            let dir_str = bin.to_string_lossy().to_string();
+            emit_log(app, &format!("内置 fnm Node.js 位于 {}", dir_str));
+            let added = try_add_to_user_path_windows(app, &[dir_str]);
+            if added {
+                emit_log(app, "已自动将上述目录添加到用户 PATH（重启终端后生效）。");
+            } else {
+                emit_log(app, "如需在命令行中直接使用 openclaw，请将上述目录添加到系统 PATH 环境变量。");
+            }
         }
         None => {
             emit_log(app, "⚠ 未在内置 fnm 目录中找到 Node.js，请确认安装成功。");
@@ -626,10 +735,12 @@ async fn run_install_steps(
             emit_step(app, step2, "error");
             emit_log(app, "");
             emit_log(app, "npm 安装失败，常见原因及解决方法：");
-            emit_log(app, "  1. 网络问题（大陆用户）：可尝试切换 npm 镜像源后重试");
+            emit_log(app, "  1. 缺少 Git：某些 npm 依赖需要 git。");
+            emit_log(app, "     Windows 请安装 Git for Windows：https://git-scm.com/download/win");
+            emit_log(app, "  2. 网络问题（大陆用户）：可尝试切换 npm 镜像源后重试");
             emit_log(app, "     npm config set registry https://registry.npmmirror.com");
-            emit_log(app, "  2. 权限问题：尝试在终端手动执行 npm install -g openclaw");
-            emit_log(app, "  3. 详细日志见 ~/.npm/_logs/ 目录下最新的 debug 文件");
+            emit_log(app, "  3. 权限问题：尝试在终端手动执行 npm install -g openclaw");
+            emit_log(app, "  4. 详细日志见 ~/.npm/_logs/ 目录下最新的 debug 文件");
             emit_error(app, step2, &e);
             return Err(e);
         }
