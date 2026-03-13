@@ -66,6 +66,7 @@ pub fn run() {
             get_dom_snapshot,
             set_active_tab_label,
             set_ai_paused,
+            skills::list_workspaces,
             skills::list_skills,
             skills::read_skill_file,
             skills::write_skill_file,

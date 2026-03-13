@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  listWorkspaces,
   listSkills,
   readSkillFile,
   writeSkillFile,
@@ -12,6 +13,9 @@ import {
 } from '@/api/skills'
 
 // ── State ─────────────────────────────────────────────────────────────────────
+const workspaces = ref<string[]>([])
+const currentWorkspace = ref('workspace')
+
 const skills = ref<SkillMeta[]>([])
 const selectedSkill = ref<SkillMeta | null>(null)
 const selectedFile = ref<string>('SKILL.md')
@@ -43,7 +47,16 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [skillList, installed] = await Promise.all([listSkills(), checkBuiltinSkillInstalled()])
+    const [wsList, skillList, installed] = await Promise.all([
+      listWorkspaces(),
+      listSkills(currentWorkspace.value),
+      checkBuiltinSkillInstalled(currentWorkspace.value),
+    ])
+    workspaces.value = wsList
+    // Ensure currentWorkspace stays valid after refresh
+    if (!wsList.includes(currentWorkspace.value)) {
+      currentWorkspace.value = wsList[0] ?? 'workspace'
+    }
     skills.value = skillList
     builtinInstalled.value = installed
     if (!selectedSkill.value && skills.value.length > 0) {
@@ -60,12 +73,21 @@ async function load() {
   }
 }
 
+async function switchWorkspace(ws: string) {
+  if (ws === currentWorkspace.value) return
+  currentWorkspace.value = ws
+  selectedSkill.value = null
+  fileContent.value = ''
+  selectedFile.value = 'SKILL.md'
+  await load()
+}
+
 // ── Install builtin skill ─────────────────────────────────────────────────────
 async function doInstallBuiltin() {
   installing.value = true
   error.value = ''
   try {
-    await installBuiltinSkill()
+    await installBuiltinSkill(currentWorkspace.value)
     await load()
     // Auto-select the installed skill
     const skill = skills.value.find(s => s.name === 'claw-browser-control')
@@ -92,7 +114,7 @@ async function loadFile() {
   if (!selectedSkill.value || !selectedFile.value) return
   error.value = ''
   try {
-    fileContent.value = await readSkillFile(selectedSkill.value.name, selectedFile.value)
+    fileContent.value = await readSkillFile(currentWorkspace.value, selectedSkill.value.name, selectedFile.value)
   } catch (e) {
     error.value = String(e)
     fileContent.value = ''
@@ -105,7 +127,7 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    await writeSkillFile(selectedSkill.value.name, selectedFile.value, fileContent.value)
+    await writeSkillFile(currentWorkspace.value, selectedSkill.value.name, selectedFile.value, fileContent.value)
     saved.value = true
     setTimeout(() => { saved.value = false }, 2000)
   } catch (e) {
@@ -122,7 +144,7 @@ async function doCreateSkill() {
   creating.value = true
   error.value = ''
   try {
-    await createSkill(name)
+    await createSkill(currentWorkspace.value, name)
     newSkillName.value = ''
     showNewSkill.value = false
     await load()
@@ -142,7 +164,7 @@ async function doCreateFile() {
   if (!name) return
   error.value = ''
   try {
-    await writeSkillFile(selectedSkill.value.name, name, '')
+    await writeSkillFile(currentWorkspace.value, selectedSkill.value.name, name, '')
     newFileName.value = ''
     showNewFile.value = false
     await load()
@@ -159,13 +181,13 @@ async function doDelete() {
   error.value = ''
   try {
     if (confirmDelete.value.type === 'skill') {
-      await deleteSkill(confirmDelete.value.name)
+      await deleteSkill(currentWorkspace.value, confirmDelete.value.name)
       if (selectedSkill.value?.name === confirmDelete.value.name) {
         selectedSkill.value = null
         fileContent.value = ''
       }
     } else if (selectedSkill.value) {
-      await deleteSkillFile(selectedSkill.value.name, confirmDelete.value.name)
+      await deleteSkillFile(currentWorkspace.value, selectedSkill.value.name, confirmDelete.value.name)
       if (selectedFile.value === confirmDelete.value.name) {
         fileContent.value = ''
         selectedFile.value = ''
@@ -230,20 +252,44 @@ onMounted(load)
         </div>
         <div class="flex flex-col">
           <span class="text-[16px] font-bold text-[#1f1f2e] leading-[1.2]">技能管理</span>
-          <span class="text-[11px] text-[#9b8ec4] mt-px font-mono">~/.openclaw/workspace/skills</span>
+          <span class="text-[11px] text-[#9b8ec4] mt-px font-mono">~/.openclaw/{{ currentWorkspace }}/skills</span>
         </div>
       </div>
-      <button
-        type="button"
-        class="flex items-center gap-1.5 px-3.5 py-[7px] text-[13px] text-secondary bg-secondary/8 border border-secondary/20 rounded-[8px] cursor-pointer transition hover:bg-secondary/13"
-        @click="load"
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
-        刷新
-      </button>
+
+      <div class="flex items-center gap-2">
+        <!-- Workspace selector（多 workspace 时显示） -->
+        <div v-if="workspaces.length > 1" class="flex items-center gap-1 p-[3px] bg-[#f5f2fc] rounded-[8px]">
+          <button
+            v-for="ws in workspaces"
+            :key="ws"
+            type="button"
+            class="px-2.5 py-[5px] text-[11px] font-medium rounded-[6px] cursor-pointer transition whitespace-nowrap"
+            :class="currentWorkspace === ws
+              ? 'bg-white text-secondary shadow-[0_1px_4px_rgba(95,71,206,0.15)]'
+              : 'text-[#9b8ec4] hover:text-secondary'"
+            @click="switchWorkspace(ws)"
+          >{{ ws }}</button>
+        </div>
+        <!-- 单 workspace 时仅展示标签，不可点击 -->
+        <div v-else-if="workspaces.length === 1" class="flex items-center gap-1.5 px-2.5 py-[5px] text-[11px] text-[#9b8ec4] bg-[#f5f2fc] rounded-[7px]">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+          </svg>
+          {{ currentWorkspace }}
+        </div>
+
+        <button
+          type="button"
+          class="flex items-center gap-1.5 px-3.5 py-[7px] text-[13px] text-secondary bg-secondary/8 border border-secondary/20 rounded-[8px] cursor-pointer transition hover:bg-secondary/13"
+          @click="load"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          刷新
+        </button>
+      </div>
     </div>
 
     <!-- ── Error bar ──────────────────────────────────────────────────────── -->

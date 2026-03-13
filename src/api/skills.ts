@@ -7,36 +7,40 @@ export interface SkillMeta {
   files: string[]
 }
 
-export function listSkills(): Promise<SkillMeta[]> {
-  return invoke('list_skills')
+export function listWorkspaces(): Promise<string[]> {
+  return invoke('list_workspaces')
 }
 
-export function readSkillFile(skillName: string, filename: string): Promise<string> {
-  return invoke('read_skill_file', { skillName, filename })
+export function listSkills(workspace: string): Promise<SkillMeta[]> {
+  return invoke('list_skills', { workspace })
 }
 
-export function writeSkillFile(skillName: string, filename: string, content: string): Promise<void> {
-  return invoke('write_skill_file', { skillName, filename, content })
+export function readSkillFile(workspace: string, skillName: string, filename: string): Promise<string> {
+  return invoke('read_skill_file', { workspace, skillName, filename })
 }
 
-export function createSkill(skillName: string): Promise<void> {
-  return invoke('create_skill', { skillName })
+export function writeSkillFile(workspace: string, skillName: string, filename: string, content: string): Promise<void> {
+  return invoke('write_skill_file', { workspace, skillName, filename, content })
 }
 
-export function deleteSkill(skillName: string): Promise<void> {
-  return invoke('delete_skill', { skillName })
+export function createSkill(workspace: string, skillName: string): Promise<void> {
+  return invoke('create_skill', { workspace, skillName })
 }
 
-export function deleteSkillFile(skillName: string, filename: string): Promise<void> {
-  return invoke('delete_skill_file', { skillName, filename })
+export function deleteSkill(workspace: string, skillName: string): Promise<void> {
+  return invoke('delete_skill', { workspace, skillName })
 }
 
-export function checkBuiltinSkillInstalled(): Promise<boolean> {
-  return invoke('check_builtin_skill_installed')
+export function deleteSkillFile(workspace: string, skillName: string, filename: string): Promise<void> {
+  return invoke('delete_skill_file', { workspace, skillName, filename })
 }
 
-export function installBuiltinSkill(): Promise<void> {
-  return invoke('install_builtin_skill')
+export function checkBuiltinSkillInstalled(workspace: string): Promise<boolean> {
+  return invoke('check_builtin_skill_installed', { workspace })
+}
+
+export function installBuiltinSkill(workspace: string): Promise<void> {
+  return invoke('install_builtin_skill', { workspace })
 }
 
 export function getOpenclawGatewayToken(): Promise<string> {

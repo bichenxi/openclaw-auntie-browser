@@ -1,6 +1,6 @@
 //! Skill file management for OpenClaw.
 //!
-//! Skills live in  ~/.openclaw/workspace/skills/<skill-name>/
+//! Skills live in  ~/.openclaw/<workspace>/skills/<skill-name>/
 //! on every supported platform (macOS, Linux, Windows).
 //! The home directory is resolved via Tauri's cross-platform path API,
 //! so no hard-coded separators or platform-specific prefixes.
@@ -13,10 +13,11 @@ use tauri::{AppHandle, Manager};
 
 // ── Path resolution ───────────────────────────────────────────────────────────
 
-/// Returns  <home>/.openclaw/workspace/skills  cross-platform.
-fn skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
+/// Returns  <home>/.openclaw/<workspace>/skills  cross-platform.
+fn skills_dir_for(app: &AppHandle, workspace: &str) -> Result<PathBuf, String> {
+    validate_workspace(workspace)?;
     let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    Ok(home.join(".openclaw").join("workspace").join("skills"))
+    Ok(home.join(".openclaw").join(workspace).join("skills"))
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -61,18 +62,18 @@ fn parse_frontmatter(text: &str) -> (Option<String>, Option<String>) {
 const BUILTIN_SKILL_NAME: &str = "claw-browser-control";
 const BUILTIN_SKILL_MD: &str = include_str!("../../openclaw-skill/SKILL.md");
 
-/// Returns true if the claw-browser-control skill is installed.
+/// Returns true if the claw-browser-control skill is installed in the given workspace.
 #[tauri::command]
-pub fn check_builtin_skill_installed(app: AppHandle) -> Result<bool, String> {
-    let path = skills_dir(&app)?.join(BUILTIN_SKILL_NAME).join("SKILL.md");
+pub fn check_builtin_skill_installed(app: AppHandle, workspace: String) -> Result<bool, String> {
+    let path = skills_dir_for(&app, &workspace)?.join(BUILTIN_SKILL_NAME).join("SKILL.md");
     Ok(path.exists())
 }
 
-/// Installs (or re-installs) the bundled claw-browser-control skill,
+/// Installs (or re-installs) the bundled claw-browser-control skill into the given workspace,
 /// and registers it in ~/.openclaw/openclaw.json.
 #[tauri::command]
-pub fn install_builtin_skill(app: AppHandle) -> Result<(), String> {
-    let dir = skills_dir(&app)?.join(BUILTIN_SKILL_NAME);
+pub fn install_builtin_skill(app: AppHandle, workspace: String) -> Result<(), String> {
+    let dir = skills_dir_for(&app, &workspace)?.join(BUILTIN_SKILL_NAME);
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("SKILL.md"), BUILTIN_SKILL_MD).map_err(|e| e.to_string())?;
     register_skill_in_openclaw(&app)?;
@@ -122,10 +123,33 @@ fn register_skill_in_openclaw(app: &AppHandle) -> Result<(), String> {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-/// List all skills with their metadata.
+/// List all workspace directories under ~/.openclaw/ that follow the
+/// `workspace` or `workspace-<name>` naming convention.
 #[tauri::command]
-pub fn list_skills(app: AppHandle) -> Result<Vec<SkillMeta>, String> {
-    let dir = skills_dir(&app)?;
+pub fn list_workspaces(app: AppHandle) -> Result<Vec<String>, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    let openclaw_dir = home.join(".openclaw");
+    if !openclaw_dir.exists() {
+        return Ok(vec!["workspace".to_string()]);
+    }
+    let mut workspaces: Vec<String> = fs::read_dir(&openclaw_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
+        .filter(|name| name == "workspace" || name.starts_with("workspace-"))
+        .collect();
+    workspaces.sort();
+    if workspaces.is_empty() {
+        workspaces.push("workspace".to_string());
+    }
+    Ok(workspaces)
+}
+
+/// List all skills with their metadata in the given workspace.
+#[tauri::command]
+pub fn list_skills(app: AppHandle, workspace: String) -> Result<Vec<SkillMeta>, String> {
+    let dir = skills_dir_for(&app, &workspace)?;
     if !dir.exists() {
         return Ok(vec![]);
     }
@@ -174,10 +198,10 @@ pub fn list_skills(app: AppHandle) -> Result<Vec<SkillMeta>, String> {
 
 /// Read a specific file within a skill directory.
 #[tauri::command]
-pub fn read_skill_file(app: AppHandle, skill_name: String, filename: String) -> Result<String, String> {
+pub fn read_skill_file(app: AppHandle, workspace: String, skill_name: String, filename: String) -> Result<String, String> {
     validate_name(&skill_name)?;
     validate_name(&filename)?;
-    let path = skills_dir(&app)?.join(&skill_name).join(&filename);
+    let path = skills_dir_for(&app, &workspace)?.join(&skill_name).join(&filename);
     fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
@@ -185,13 +209,14 @@ pub fn read_skill_file(app: AppHandle, skill_name: String, filename: String) -> 
 #[tauri::command]
 pub fn write_skill_file(
     app: AppHandle,
+    workspace: String,
     skill_name: String,
     filename: String,
     content: String,
 ) -> Result<(), String> {
     validate_name(&skill_name)?;
     validate_name(&filename)?;
-    let dir = skills_dir(&app)?.join(&skill_name);
+    let dir = skills_dir_for(&app, &workspace)?.join(&skill_name);
     if !dir.exists() {
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     }
@@ -200,9 +225,9 @@ pub fn write_skill_file(
 
 /// Create a new skill directory with a template SKILL.md.
 #[tauri::command]
-pub fn create_skill(app: AppHandle, skill_name: String) -> Result<(), String> {
+pub fn create_skill(app: AppHandle, workspace: String, skill_name: String) -> Result<(), String> {
     validate_name(&skill_name)?;
-    let dir = skills_dir(&app)?.join(&skill_name);
+    let dir = skills_dir_for(&app, &workspace)?.join(&skill_name);
     if dir.exists() {
         return Err(format!("技能 '{}' 已存在", skill_name));
     }
@@ -217,9 +242,9 @@ pub fn create_skill(app: AppHandle, skill_name: String) -> Result<(), String> {
 
 /// Delete an entire skill directory.
 #[tauri::command]
-pub fn delete_skill(app: AppHandle, skill_name: String) -> Result<(), String> {
+pub fn delete_skill(app: AppHandle, workspace: String, skill_name: String) -> Result<(), String> {
     validate_name(&skill_name)?;
-    let dir = skills_dir(&app)?.join(&skill_name);
+    let dir = skills_dir_for(&app, &workspace)?.join(&skill_name);
     if !dir.exists() {
         return Err(format!("技能 '{}' 不存在", skill_name));
     }
@@ -228,10 +253,10 @@ pub fn delete_skill(app: AppHandle, skill_name: String) -> Result<(), String> {
 
 /// Delete a single file within a skill directory.
 #[tauri::command]
-pub fn delete_skill_file(app: AppHandle, skill_name: String, filename: String) -> Result<(), String> {
+pub fn delete_skill_file(app: AppHandle, workspace: String, skill_name: String, filename: String) -> Result<(), String> {
     validate_name(&skill_name)?;
     validate_name(&filename)?;
-    let path = skills_dir(&app)?.join(&skill_name).join(&filename);
+    let path = skills_dir_for(&app, &workspace)?.join(&skill_name).join(&filename);
     fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
@@ -255,7 +280,7 @@ pub fn get_openclaw_gateway_token(app: AppHandle) -> Result<String, String> {
         .ok_or_else(|| "openclaw.json 中未找到 gateway.auth.token".to_string())
 }
 
-// ── Security: path traversal guard ───────────────────────────────────────────
+// ── Security: path traversal guards ──────────────────────────────────────────
 
 fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
@@ -263,3 +288,18 @@ fn validate_name(name: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+fn validate_workspace(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || !(name == "workspace" || name.starts_with("workspace-"))
+    {
+        return Err(format!("无效的 workspace 名称: {:?}", name));
+    }
+    Ok(())
+}
+
+
+// ── Security: path traversal guards ──────────────────────────────────────────
