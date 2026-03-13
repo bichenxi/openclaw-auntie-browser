@@ -594,14 +594,21 @@ async fn run_install_steps(
     emit_step(app, step2, "running");
     emit_log(app, "正在通过 npm 全局安装 openclaw，请稍候...");
 
+    #[cfg(target_os = "windows")]
+    let npm_bin = "npm.cmd";
+    #[cfg(not(target_os = "windows"))]
+    let npm_bin = "npm";
+
     let install_result = if use_bundled_fnm {
-        run_step(app, fnm_dir, &["exec", "--using=22", "--", "npm", "install", "-g", "openclaw", "--no-update-notifier", "--no-fund"], cancel_rx).await
+        run_step(app, fnm_dir, &["exec", "--using=22", "--", npm_bin, "install", "-g", "openclaw", "--no-update-notifier", "--no-fund"], cancel_rx).await
     } else {
         match &strategy {
             NodeStrategy::SystemNode(_) =>
                 run_login_shell_step(app, "npm install -g openclaw --no-update-notifier --no-fund", cancel_rx).await,
-            NodeStrategy::SystemFnm =>
-                run_login_shell_step(app, "fnm exec --using=22 -- npm install -g openclaw --no-update-notifier --no-fund", cancel_rx).await,
+            NodeStrategy::SystemFnm => {
+                let cmd = format!("fnm exec --using=22 -- {} install -g openclaw --no-update-notifier --no-fund", npm_bin);
+                run_login_shell_step(app, &cmd, cancel_rx).await
+            }
             NodeStrategy::SystemNvm => {
                 #[cfg(not(target_os = "windows"))]
                 let cmd = format!("source '{}' && nvm exec 22 npm install -g openclaw --no-update-notifier --no-fund", nvm_sh.display());
