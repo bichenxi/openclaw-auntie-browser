@@ -386,12 +386,12 @@ fn wizard_extra_path_dirs(app: &AppHandle) -> Vec<String> {
     #[cfg(not(target_os = "windows"))]
     let fnm_base = std::path::Path::new(&home).join(".local").join("share").join("fnm").join("node-versions");
     #[cfg(target_os = "windows")]
-    let fnm_base = std::env::var("LOCALAPPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("fnm_multishells"))
-        .unwrap_or_else(|_| std::path::PathBuf::from(&home).join("AppData").join("Local").join("fnm_multishells"));
+    let fnm_base = std::env::var("APPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("fnm").join("node-versions"))
+        .unwrap_or_else(|_| std::path::PathBuf::from(&home).join("AppData").join("Roaming").join("fnm").join("node-versions"));
     if let Ok(rd) = std::fs::read_dir(&fnm_base) {
         for e in rd.flatten() {
-            let bin = if cfg!(windows) { e.path() } else { e.path().join("installation").join("bin") };
+            let bin = if cfg!(windows) { e.path().join("installation") } else { e.path().join("installation").join("bin") };
             if bin.join(openclaw_bin).exists() {
                 dirs.push(bin.to_string_lossy().to_string());
             }
@@ -417,6 +417,42 @@ fn wizard_extra_path_dirs(app: &AppHandle) -> Vec<String> {
     dirs
 }
 
+/// Windows: 在 extra_dirs 和系统 PATH 中搜索 `node.exe` + `openclaw` npm 包，
+/// 通过 package.json 的 `bin` 字段定位 JS 入口，返回 (node_exe, entry_js)。
+/// 直接运行 node.exe 可避免 cmd.exe 在 ConPTY 中的 DLL 初始化失败 (0xC0000142)。
+#[cfg(target_os = "windows")]
+fn find_node_and_openclaw_entry(extra_dirs: &[String]) -> Option<(String, String)> {
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    let all_dirs = extra_dirs.iter().map(|s| s.as_str())
+        .chain(path_var.split(';'));
+
+    for dir in all_dirs {
+        if dir.is_empty() { continue; }
+        let dp = std::path::Path::new(dir);
+        let node_exe = dp.join("node.exe");
+        let pkg_json = dp.join("node_modules").join("openclaw").join("package.json");
+        if !node_exe.exists() || !pkg_json.exists() { continue; }
+
+        let content = std::fs::read_to_string(&pkg_json).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+        let rel = match json.get("bin")? {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Object(m) => {
+                m.get("openclaw").and_then(|v| v.as_str()).map(String::from)?
+            }
+            _ => continue,
+        };
+        let entry = dp.join("node_modules").join("openclaw").join(&rel);
+        if entry.exists() {
+            return Some((
+                node_exe.to_string_lossy().to_string(),
+                entry.to_string_lossy().to_string(),
+            ));
+        }
+    }
+    None
+}
+
 /// 启动卡片向导：用 portable-pty 跨平台 PTY 运行 openclaw onboard，
 /// 通过 vt100 解析屏幕，将 prompt 以结构化事件推送给前端。
 #[tauri::command]
@@ -435,7 +471,11 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
     let extra = wizard_extra_path_dirs(&app);
     let extra_str = extra.join(if cfg!(windows) { ";" } else { ":" });
     let current_path = std::env::var("PATH").unwrap_or_default();
-    let full_path = format!("{}{}{}", extra_str, if cfg!(windows) { ";" } else { ":" }, current_path);
+    let full_path = if extra_str.is_empty() {
+        current_path.clone()
+    } else {
+        format!("{}{}{}", extra_str, if cfg!(windows) { ";" } else { ":" }, current_path)
+    };
 
     let pty_system = portable_pty::native_pty_system();
     let pair = pty_system.openpty(PtySize {
@@ -445,11 +485,25 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
         pixel_height: 0,
     }).map_err(|e| format!("PTY 分配失败：{}", e))?;
 
-    let mut cmd = if cfg!(windows) {
-        let mut c = CommandBuilder::new("cmd");
-        c.args(["/C", "openclaw onboard"]);
-        c
-    } else {
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        // 优先直接运行 node.exe + openclaw JS 入口，避免 cmd.exe 在 ConPTY 中的
+        // DLL 初始化问题 (0xC0000142)。找不到时回退到 cmd /C。
+        if let Some((node_exe, entry_js)) = find_node_and_openclaw_entry(&extra) {
+            let mut c = CommandBuilder::new(&node_exe);
+            c.args([&entry_js, "onboard".to_string()]);
+            if let Some(parent) = std::path::Path::new(&node_exe).parent() {
+                c.cwd(parent);
+            }
+            c
+        } else {
+            let mut c = CommandBuilder::new("cmd");
+            c.args(["/C", "openclaw onboard"]);
+            c
+        }
+    };
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = {
         let shell = detect_login_shell();
         let cmd_str = format!("export PATH=\"{}:$PATH\"; openclaw onboard", extra_str);
         let mut c = CommandBuilder::new(&shell);
