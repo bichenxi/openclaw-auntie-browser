@@ -502,24 +502,37 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
     // ── Windows: conpty ──────────────────────────────────────────────────
     #[cfg(target_os = "windows")]
     let (reader, inner): (Box<dyn Read + Send>, WizardInner) = {
-        let mut cmd = if let Some((node_exe, entry_js)) = find_node_and_openclaw_entry(&extra) {
-            let mut c = std::process::Command::new(&node_exe);
-            c.args([&entry_js, "onboard"]);
-            if let Some(parent) = std::path::Path::new(&node_exe).parent() {
+        let found = find_node_and_openclaw_entry(&extra);
+        let mut cmd = if let Some((ref node_exe, ref entry_js)) = found {
+            eprintln!("[wizard] 直接启动 node: {} {}", node_exe, entry_js);
+            let mut c = std::process::Command::new(node_exe);
+            c.args([entry_js.as_str(), "onboard"]);
+            if let Some(parent) = std::path::Path::new(node_exe).parent() {
                 c.current_dir(parent);
             }
             c
         } else {
+            eprintln!("[wizard] 回退到 cmd /C openclaw onboard");
             let mut c = std::process::Command::new("cmd");
-            c.args(["/C", "openclaw onboard"]);
+            c.args(["/C", "openclaw", "onboard"]);
             c
         };
+
+        // conpty 只传递 Command::get_envs() 显式设置的变量给子进程。
+        // Windows 环境变量大小写不敏感但 Command 区分大小写，
+        // 必须跳过原始 Path/PATH 以免产生两条重复条目。
+        for (key, value) in std::env::vars_os() {
+            if key.to_ascii_uppercase() == "PATH" { continue; }
+            cmd.env(&key, &value);
+        }
         cmd.env("PATH", &full_path);
+        eprintln!("[wizard] PATH (前 300 字符): {}", &full_path[..full_path.len().min(300)]);
 
         let mut opts = conpty::ProcessOptions::default();
         opts.set_console_size(Some((120, 30)));
         let mut proc = opts.spawn(cmd)
             .map_err(|e| format!("启动 openclaw onboard 失败：{}", e))?;
+        eprintln!("[wizard] conpty 进程已启动, pid={}", proc.pid());
 
         let reader: Box<dyn Read + Send> = Box::new(
             proc.output().map_err(|e| format!("无法获取 PTY reader：{}", e))?
@@ -573,11 +586,24 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
     std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut total_bytes = 0usize;
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => { let _ = tx.send(buf[..n].to_vec()); }
-                Err(_) => break,
+                Ok(0) => {
+                    eprintln!("[wizard-reader] EOF, 共读取 {} 字节", total_bytes);
+                    break;
+                }
+                Ok(n) => {
+                    total_bytes += n;
+                    if total_bytes == n {
+                        eprintln!("[wizard-reader] 首次收到 {} 字节数据", n);
+                    }
+                    let _ = tx.send(buf[..n].to_vec());
+                }
+                Err(e) => {
+                    eprintln!("[wizard-reader] 读取错误: {}, 已读 {} 字节", e, total_bytes);
+                    break;
+                }
             }
         }
     });
