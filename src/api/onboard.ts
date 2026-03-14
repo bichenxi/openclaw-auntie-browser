@@ -61,3 +61,13 @@ export async function killOnboardWizard(): Promise<void> {
 export async function isOnboardWizardRunning(): Promise<boolean> {
   return invoke<boolean>('is_onboard_wizard_running')
 }
+
+// ─── 提权 ──────────────────────────────────────────────────────────────────
+
+export async function isElevated(): Promise<boolean> {
+  return invoke<boolean>('is_elevated')
+}
+
+export async function restartElevated(): Promise<void> {
+  await invoke('restart_elevated')
+}

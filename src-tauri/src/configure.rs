@@ -1053,3 +1053,55 @@ pub async fn kill_onboard_pty(_state: tauri::State<'_, OnboardPtyState>) -> Resu
 pub fn is_onboard_pty_running(_state: tauri::State<'_, OnboardPtyState>) -> bool {
     false
 }
+
+// ─── Windows 提权支持 ──────────────────────────────────────────────────────
+
+/// 检测当前进程是否以管理员身份运行。
+#[tauri::command]
+pub fn is_elevated() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("net")
+            .args(["session"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "windows"))]
+    { true }
+}
+
+/// 以管理员身份重新启动应用（Windows UAC 提权）。
+/// 当前实例在新实例启动后退出。
+#[tauri::command]
+pub fn restart_elevated(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let exe = std::env::current_exe().map_err(|e| format!("获取可执行文件路径失败：{}", e))?;
+        let exe_str = exe.to_string_lossy().to_string();
+
+        let status = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile", "-Command",
+                &format!("Start-Process '{}' -Verb RunAs", exe_str),
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("启动提权进程失败：{}", e))?;
+
+        if status.success() {
+            app.exit(0);
+            Ok(())
+        } else {
+            Err("用户取消了管理员提权".to_string())
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("非 Windows 系统不需要提权".to_string())
+    }
+}

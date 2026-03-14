@@ -92,6 +92,8 @@ pub fn run() {
             configure::wizard_send_keys,
             configure::kill_onboard_wizard,
             configure::is_onboard_wizard_running,
+            configure::is_elevated,
+            configure::restart_elevated,
             gateway::check_and_fix_gateway_config,
             gateway::restart_openclaw_gateway,
         ])

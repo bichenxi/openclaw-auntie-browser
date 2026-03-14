@@ -6,6 +6,8 @@ import {
   wizardSendKeys,
   killOnboardWizard,
   runOnboard,
+  isElevated,
+  restartElevated,
   type WizardPrompt,
   type OnboardParams,
 } from '@/api/onboard'
@@ -29,6 +31,10 @@ let sendingTimer: ReturnType<typeof setTimeout> | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const autoConfiguring = ref(false)
+
+const isWindows = /windows/i.test(navigator.userAgent)
+const elevated = ref(true)
+const elevating = ref(false)
 
 // ─── Windows 表单模式（不依赖 PTY）────────────────────────────────────────
 const formMode = ref(false)
@@ -291,8 +297,22 @@ watch(
   },
 )
 
-onMounted(() => { if (store.wizardVisible) startListeners() })
+onMounted(async () => {
+  if (store.wizardVisible) startListeners()
+  if (isWindows) {
+    elevated.value = await isElevated().catch(() => true)
+  }
+})
 onUnmounted(stopListeners)
+
+async function handleElevate() {
+  elevating.value = true
+  try {
+    await restartElevated()
+  } catch {
+    elevating.value = false
+  }
+}
 
 async function handleStart() {
   starting.value = true
@@ -505,7 +525,37 @@ async function goToChat() {
                 <p class="text-[13px] text-[#6b5f8a] text-center max-w-[360px] leading-relaxed">
                   将运行 <code class="bg-[#f0ecfa] px-1.5 py-px rounded text-[11px]">openclaw onboard</code> 进行初始化配置，完成后自动启动网关。
                 </p>
+
+                <!-- Windows 未提权提示 -->
+                <div v-if="isWindows && !elevated" class="flex flex-col items-center gap-3 w-full max-w-[380px]">
+                  <div class="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 w-full">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="shrink-0">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <span class="text-[12px]">当前非管理员模式，建议提权以确保 PTY 正常运行</span>
+                  </div>
+                  <div class="flex gap-3 w-full">
+                    <button
+                      class="flex-1 px-4 py-2.5 text-[13px] font-medium rounded-[10px] cursor-pointer transition border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      :disabled="elevating"
+                      @click="handleElevate"
+                    >
+                      {{ elevating ? '正在提权…' : '以管理员重启' }}
+                    </button>
+                    <button
+                      class="flex-1 px-4 py-2.5 text-[13px] font-medium text-white rounded-[10px] cursor-pointer transition bg-[linear-gradient(135deg,#7c5cfc_0%,#5f47ce_100%)] shadow-[0_2px_10px_rgba(95,71,206,0.22)] hover:shadow-[0_4px_16px_rgba(95,71,206,0.32)] disabled:opacity-50 disabled:cursor-not-allowed"
+                      :disabled="starting"
+                      @click="handleStart"
+                    >
+                      {{ starting ? '启动中…' : '直接开始' }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 已提权或非 Windows -->
                 <button
+                  v-else
                   class="px-6 py-2.5 text-[14px] font-medium text-white rounded-[10px] cursor-pointer transition bg-[linear-gradient(135deg,#7c5cfc_0%,#5f47ce_100%)] shadow-[0_2px_10px_rgba(95,71,206,0.22)] hover:shadow-[0_4px_16px_rgba(95,71,206,0.32)] disabled:opacity-50 disabled:cursor-not-allowed"
                   :disabled="starting"
                   @click="handleStart"
