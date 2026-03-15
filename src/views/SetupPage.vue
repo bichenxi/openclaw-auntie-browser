@@ -30,6 +30,9 @@ const launchStepLabel = computed(() => {
 
 onMounted(() => {
   installerStore.startListeners()
+  if (!installerStore.isInstalled) {
+    installerStore.detectEnv()
+  }
 })
 
 onUnmounted(() => {
@@ -306,6 +309,91 @@ function copyCommand() {
           Oclaw 需要 OpenClaw 本地 gateway 才能工作。<br />
           点击「开始安装」，将自动完成环境配置与初始化。
         </p>
+      </div>
+
+      <!-- 环境检测面板（安装前展示） -->
+      <div v-if="!installerStore.installing && !installerStore.done && !installerStore.needOnboard" class="w-full max-w-[400px] mb-4">
+        <div class="bg-white rounded-2xl shadow-sm border border-[#e8e2f4] overflow-hidden">
+          <div class="flex items-center justify-between px-5 py-3 border-b border-[#f0ecfa]">
+            <span class="text-[13px] font-medium text-[#2d1f6e]">环境检测</span>
+            <button
+              v-if="!installerStore.envDetecting"
+              class="text-[11px] text-secondary cursor-pointer bg-transparent border-none p-0 hover:underline"
+              @click="installerStore.detectEnv()"
+            >重新检测</button>
+            <span v-else class="text-[11px] text-[#9b8ec4]">检测中...</span>
+          </div>
+
+          <div v-if="installerStore.envDetecting" class="px-5 py-4 flex-center gap-2">
+            <div class="w-4 h-4 rounded-full border-2 border-[#e8e2f4] border-t-secondary animate-spin" />
+            <span class="text-[12px] text-[#9b8ec4]">正在检测系统环境...</span>
+          </div>
+
+          <template v-else-if="installerStore.envInfo">
+            <div class="divide-y divide-[#f0ecfa]">
+              <!-- Node.js -->
+              <div class="flex items-center gap-3 px-5 py-2.5">
+                <div class="w-5 h-5 flex-center shrink-0">
+                  <svg v-if="installerStore.envInfo.node_version" class="w-4 h-4 text-emerald-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                  <svg v-else class="w-4 h-4 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                </div>
+                <span class="text-[12px] text-[#5a5078] flex-1">Node.js</span>
+                <span class="text-[12px]" :class="installerStore.envInfo.node_version ? 'text-emerald-600' : 'text-amber-600'">
+                  {{ installerStore.envInfo.node_version || '未安装' }}
+                </span>
+              </div>
+              <!-- npm -->
+              <div class="flex items-center gap-3 px-5 py-2.5">
+                <div class="w-5 h-5 flex-center shrink-0">
+                  <svg v-if="installerStore.envInfo.npm_version" class="w-4 h-4 text-emerald-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                  <svg v-else class="w-4 h-4 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                </div>
+                <span class="text-[12px] text-[#5a5078] flex-1">npm</span>
+                <span class="text-[12px]" :class="installerStore.envInfo.npm_version ? 'text-emerald-600' : 'text-amber-600'">
+                  {{ installerStore.envInfo.npm_version ? `v${installerStore.envInfo.npm_version}` : '未安装' }}
+                </span>
+              </div>
+              <!-- Git -->
+              <div class="flex items-center gap-3 px-5 py-2.5">
+                <div class="w-5 h-5 flex-center shrink-0">
+                  <svg v-if="installerStore.envInfo.git_version" class="w-4 h-4 text-emerald-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                  <svg v-else class="w-4 h-4" :class="isWindows ? 'text-red-500' : 'text-amber-500'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                </div>
+                <span class="text-[12px] text-[#5a5078] flex-1">Git</span>
+                <span class="text-[12px]" :class="installerStore.envInfo.git_version ? 'text-emerald-600' : (isWindows ? 'text-red-600' : 'text-amber-600')">
+                  {{ installerStore.envInfo.git_version ? `v${installerStore.envInfo.git_version}` : '未安装' }}
+                </span>
+              </div>
+              <!-- 版本管理器 -->
+              <div v-if="installerStore.envInfo.has_nvm || installerStore.envInfo.has_fnm" class="flex items-center gap-3 px-5 py-2.5">
+                <div class="w-5 h-5 flex-center shrink-0">
+                  <svg class="w-4 h-4 text-emerald-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+                </div>
+                <span class="text-[12px] text-[#5a5078] flex-1">版本管理器</span>
+                <span class="text-[12px] text-emerald-600">
+                  {{ [installerStore.envInfo.has_nvm ? 'nvm' : '', installerStore.envInfo.has_fnm ? 'fnm' : ''].filter(Boolean).join(' / ') }}
+                </span>
+              </div>
+            </div>
+            <!-- 策略提示 -->
+            <div class="px-5 py-2.5 bg-[#f8f6ff] text-[11px] text-[#7b6aa8] leading-relaxed">
+              {{ installerStore.envInfo.strategy }}
+            </div>
+            <!-- Windows Git 缺失警告 -->
+            <div v-if="isWindows && !installerStore.envInfo.git_version" class="px-5 py-2.5 bg-red-50 text-[11px] text-red-600 leading-relaxed">
+              Windows 下 openclaw 安装依赖 Git，安装时将自动尝试获取。
+            </div>
+            <!-- Windows 中文路径警告 -->
+            <div v-if="installerStore.envInfo.unicode_home_warning" class="px-5 py-2.5 text-[11px] leading-relaxed" :class="installerStore.envInfo.safe_home ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'">
+              <template v-if="installerStore.envInfo.safe_home">
+                检测到中文用户名路径，已自动映射到短路径修正，Node.js 文件操作将使用安全路径。
+              </template>
+              <template v-else>
+                检测到中文用户名路径，可能导致 OpenClaw 配置写入异常。建议使用纯英文 Windows 用户名。
+              </template>
+            </div>
+          </template>
+        </div>
       </div>
 
       <!-- 步骤列表 -->

@@ -91,12 +91,16 @@ pub async fn run_onboard(app: AppHandle, params: OnboardParams) -> Result<(), St
         .map_err(|e| format!("启动 onboard 失败：{}", e))?;
 
     #[cfg(target_os = "windows")]
-    let mut child = Command::new("cmd")
-        .args(["/C", &cmd_str])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("启动 onboard 失败：{}", e))?;
+    let mut child = {
+        let mut b = Command::new("cmd");
+        b.args(["/C", &cmd_str])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(ref safe_home) = crate::installer::safe_home_for_openclaw() {
+            b.env("HOME", safe_home);
+        }
+        b.spawn().map_err(|e| format!("启动 onboard 失败：{}", e))?
+    };
 
     let mut out = BufReader::new(child.stdout.take().unwrap()).lines();
     let mut err = BufReader::new(child.stderr.take().unwrap()).lines();
@@ -594,10 +598,14 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
 
         for (key, value) in std::env::vars_os() {
             let k = key.to_string_lossy().to_uppercase();
-            if k == "PATH" { continue; }
+            if k == "PATH" || k == "HOME" { continue; }
             cmd.env(&key, &value);
         }
         cmd.env("PATH", &full_path);
+        if let Some(ref safe_home) = crate::installer::safe_home_for_openclaw() {
+            cmd.env("HOME", safe_home);
+            eprintln!("[wizard] 中文路径修正：HOME={}", safe_home);
+        }
         eprintln!("[wizard] 增强 PATH 已就绪");
         let _ = app.emit("wizard:raw-data", "[wizard] ConPTY 启动中…".to_string());
 

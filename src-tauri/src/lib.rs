@@ -11,7 +11,10 @@ mod profile;
 mod skills;
 mod webview;
 
-use api::{set_active_tab_label, set_ai_paused, ActiveTabLabel, AiPaused, PendingEvalResult, PendingSnapshot};
+use api::{
+    set_active_tab_label, set_ai_paused, ActiveTabLabel, AiPaused, PendingEvalResult,
+    PendingSnapshot,
+};
 use app::{emit_stream_item, simulate_stream};
 use installer::InstallerState;
 use openclaw::{openclaw_connect, openclaw_disconnect, openclaw_send_chat, OpenClawState};
@@ -82,6 +85,7 @@ pub fn run() {
             installer::start_install,
             installer::cancel_install,
             installer::check_openclaw_installed,
+            installer::detect_environment,
             configure::run_onboard,
             configure::start_onboard_pty,
             configure::write_onboard_stdin,

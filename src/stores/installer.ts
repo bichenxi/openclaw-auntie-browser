@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { listen } from '@tauri-apps/api/event'
+import type { EnvironmentInfo } from '@/api/installer'
+import { detectEnvironment } from '@/api/installer'
 
 export type StepStatus = 'pending' | 'running' | 'done' | 'error'
 
@@ -29,6 +31,10 @@ export const useInstallerStore = defineStore('installer', () => {
   const isOnboarded = ref(false)
   /** npm 安装完成，等待用户执行 onboard（在安装向导内展示第三步） */
   const needOnboard = ref(false)
+
+  /** 环境检测结果 */
+  const envInfo = ref<EnvironmentInfo | null>(null)
+  const envDetecting = ref(false)
 
   let unlistens: Array<() => void> = []
 
@@ -80,6 +86,17 @@ export const useInstallerStore = defineStore('installer', () => {
     unlistens = []
   }
 
+  async function detectEnv() {
+    envDetecting.value = true
+    try {
+      envInfo.value = await detectEnvironment()
+    } catch {
+      envInfo.value = null
+    } finally {
+      envDetecting.value = false
+    }
+  }
+
   function completeOnboard() {
     const step = steps.value.find((s) => s.id === 'onboard')
     if (step) step.status = 'done'
@@ -92,6 +109,7 @@ export const useInstallerStore = defineStore('installer', () => {
   return {
     steps, logs, installing, error, done,
     isInstalled, isOnboarded, needOnboard,
-    resetSteps, completeOnboard, startListeners, stopListeners,
+    envInfo, envDetecting,
+    resetSteps, completeOnboard, startListeners, stopListeners, detectEnv,
   }
 })

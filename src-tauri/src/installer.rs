@@ -41,22 +41,42 @@ impl Default for InstallerState {
 // ─── 事件 Payload ──────────────────────────────────────────────────────────
 
 #[derive(Clone, serde::Serialize)]
-struct StepPayload { step: String, status: String }
+struct StepPayload {
+    step: String,
+    status: String,
+}
 
 #[derive(Clone, serde::Serialize)]
-struct LogPayload { line: String }
+struct LogPayload {
+    line: String,
+}
 
 #[derive(Clone, serde::Serialize)]
-struct ErrorPayload { step: String, message: String }
+struct ErrorPayload {
+    step: String,
+    message: String,
+}
 
 fn emit_step(app: &AppHandle, step: &str, status: &str) {
-    let _ = app.emit("installer:step", StepPayload { step: step.into(), status: status.into() });
+    let _ = app.emit(
+        "installer:step",
+        StepPayload {
+            step: step.into(),
+            status: status.into(),
+        },
+    );
 }
 fn emit_log(app: &AppHandle, line: &str) {
     let _ = app.emit("installer:log", LogPayload { line: line.into() });
 }
 fn emit_error(app: &AppHandle, step: &str, message: &str) {
-    let _ = app.emit("installer:error", ErrorPayload { step: step.into(), message: message.into() });
+    let _ = app.emit(
+        "installer:error",
+        ErrorPayload {
+            step: step.into(),
+            message: message.into(),
+        },
+    );
 }
 
 // ─── 环境检测 ──────────────────────────────────────────────────────────────
@@ -85,10 +105,14 @@ pub(crate) fn detect_login_shell() -> String {
     #[cfg(not(target_os = "windows"))]
     {
         if let Ok(s) = std::env::var("SHELL") {
-            if std::path::Path::new(&s).exists() { return s; }
+            if std::path::Path::new(&s).exists() {
+                return s;
+            }
         }
         for sh in &["/bin/zsh", "/bin/bash", "/bin/sh"] {
-            if std::path::Path::new(sh).exists() { return sh.to_string(); }
+            if std::path::Path::new(sh).exists() {
+                return sh.to_string();
+            }
         }
         "/bin/sh".to_string()
     }
@@ -104,14 +128,18 @@ pub(crate) fn run_in_shell(cmd: &str) -> std::io::Result<std::process::Output> {
     #[cfg(not(target_os = "windows"))]
     {
         let shell = detect_login_shell();
-        std::process::Command::new(&shell).args(["-l", "-c", cmd]).output()
+        std::process::Command::new(&shell)
+            .args(["-l", "-c", cmd])
+            .output()
     }
 }
 
 /// 检测 node major 版本，返回 None 表示未安装或无法检测。
 fn detect_system_node_major() -> Option<u32> {
     let out = run_in_shell("node --version").ok()?;
-    if !out.status.success() { return None; }
+    if !out.status.success() {
+        return None;
+    }
     let s = String::from_utf8_lossy(&out.stdout);
     let trimmed = s.trim().trim_start_matches('v');
     trimmed.split('.').next()?.parse::<u32>().ok()
@@ -152,7 +180,9 @@ fn detect_node_strategy(home_dir: &std::path::Path) -> NodeStrategy {
             .map(|a| std::path::PathBuf::from(a).join("nvm").join("nvm.exe"))
             .unwrap_or_default();
         nvm_exe.exists()
-            || run_in_shell("nvm version").map(|o| o.status.success()).unwrap_or(false)
+            || run_in_shell("nvm version")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
     };
     if has_nvm {
         return NodeStrategy::SystemNvm;
@@ -170,6 +200,93 @@ fn detect_node_strategy(home_dir: &std::path::Path) -> NodeStrategy {
     }
     // 兜底：内置 fnm
     NodeStrategy::BundledFnm
+}
+
+// ─── Windows Unicode 路径修正 ─────────────────────────────────────────────────
+//
+// Windows 用户名含中文（如 `C:\Users\毕晨曦`）时，Node.js 的 fs.rename（原子写入）
+// 可能失败，导致 OpenClaw gateway 配置文件写入异常、进程闪退（WebSocket 1006）。
+//
+// 修正策略：获取用户目录的 8.3 短路径名（如 `C:\Users\BICHEN~1`），通过 HOME 环境变量
+// 让 Node.js 的 os.homedir() 返回纯 ASCII 路径。短路径指向同一目录，对应用透明。
+
+/// 缓存短路径检测结果，避免每次启动进程都调用 PowerShell。
+#[cfg(target_os = "windows")]
+static SAFE_HOME_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn path_has_non_ascii(s: &str) -> bool {
+    !s.is_ascii()
+}
+
+/// 通过 Windows 8.3 短路径获取纯 ASCII 路径。
+/// 8.3 短路径名是 NTFS 文件系统为长文件名/非 ASCII 文件名生成的别名，指向同一目录。
+#[cfg(target_os = "windows")]
+fn get_short_path_name(long_path: &str) -> Option<String> {
+    let ps_cmd = format!(
+        "$fso = New-Object -ComObject Scripting.FileSystemObject; $fso.GetFolder('{}').ShortPath",
+        long_path.replace('\'', "''")
+    );
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() || !s.is_ascii() { None } else { Some(s) }
+        })
+}
+
+/// 当用户主目录包含非 ASCII 字符时，返回 ASCII 安全的短路径；否则返回 None。
+/// 结果被缓存，仅首次调用执行 PowerShell 检测。
+#[cfg(target_os = "windows")]
+pub(crate) fn safe_home_for_openclaw() -> Option<String> {
+    SAFE_HOME_CACHE.get_or_init(|| {
+        let home = std::env::var("USERPROFILE").ok()?;
+        if !path_has_non_ascii(&home) { return None; }
+        get_short_path_name(&home)
+    }).clone()
+}
+
+// ─── Windows Unicode 路径修正 ─────────────────────────────────────────────────
+//
+// Windows 用户名含中文（如 `C:\Users\毕晨曦`）时，Node.js 的 fs.rename（原子写入）
+// 可能失败，导致 OpenClaw gateway 配置文件写入异常、进程闪退（WebSocket 1006）。
+//
+// 修正策略：获取用户目录的 8.3 短路径名（如 `C:\Users\BICHEN~1`），通过 HOME 环境变量
+// 让 Node.js 的 os.homedir() 返回纯 ASCII 路径。短路径指向同一目录，对应用透明。
+
+#[cfg(target_os = "windows")]
+static SAFE_HOME_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+/// 通过 PowerShell FileSystemObject 获取 Windows 8.3 短路径名（纯 ASCII）。
+#[cfg(target_os = "windows")]
+fn get_short_path_name(long_path: &str) -> Option<String> {
+    let ps_cmd = format!(
+        "$fso = New-Object -ComObject Scripting.FileSystemObject; $fso.GetFolder('{}').ShortPath",
+        long_path.replace('\'', "''")
+    );
+    std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if s.is_empty() || !s.is_ascii() { None } else { Some(s) }
+        })
+}
+
+/// 当用户主目录包含非 ASCII 字符时，返回 ASCII 安全的 8.3 短路径；否则返回 None。
+/// 结果被 OnceLock 缓存，仅首次调用执行 PowerShell。
+#[cfg(target_os = "windows")]
+pub(crate) fn safe_home_for_openclaw() -> Option<String> {
+    SAFE_HOME_CACHE.get_or_init(|| {
+        let home = std::env::var("USERPROFILE").ok()?;
+        if home.is_ascii() { return None; }
+        get_short_path_name(&home)
+    }).clone()
 }
 
 // ─── Windows 工具路径补全 ────────────────────────────────────────────────────
@@ -247,14 +364,18 @@ fn find_git_cmd_dir() -> Option<String> {
     // Oclaw 下载的便携版 MinGit
     if let Ok(appdata) = std::env::var("APPDATA") {
         let mingit_cmd = std::path::Path::new(&appdata)
-            .join("com.claw.browser").join("mingit").join("cmd");
+            .join("com.claw.browser")
+            .join("mingit")
+            .join("cmd");
         if mingit_cmd.join("git.exe").exists() {
             return Some(mingit_cmd.to_string_lossy().to_string());
         }
     }
     if let Ok(local_ad) = std::env::var("LOCALAPPDATA") {
         let mingit_cmd = std::path::Path::new(&local_ad)
-            .join("com.claw.browser").join("mingit").join("cmd");
+            .join("com.claw.browser")
+            .join("mingit")
+            .join("cmd");
         if mingit_cmd.join("git.exe").exists() {
             return Some(mingit_cmd.to_string_lossy().to_string());
         }
@@ -275,7 +396,10 @@ fn download_portable_git(app: &AppHandle) -> Option<String> {
         return Some(git_cmd_dir.to_string_lossy().to_string());
     }
 
-    emit_log(app, "正在下载便携版 Git（MinGit，约 35MB，无需管理员权限）...");
+    emit_log(
+        app,
+        "正在下载便携版 Git（MinGit，约 35MB，无需管理员权限）...",
+    );
 
     let zip_path = app_data.join("mingit.zip");
     let _ = std::fs::create_dir_all(&app_data);
@@ -290,15 +414,24 @@ fn download_portable_git(app: &AppHandle) -> Option<String> {
     let mut urls: Vec<(String, &str)> = Vec::new();
     for (tag, ver) in versions {
         urls.push((
-            format!("https://registry.npmmirror.com/-/binary/git-for-windows/v{}/MinGit-{}-64-bit.zip", tag, ver),
+            format!(
+                "https://registry.npmmirror.com/-/binary/git-for-windows/v{}/MinGit-{}-64-bit.zip",
+                tag, ver
+            ),
             "npmmirror 镜像",
         ));
         urls.push((
-            format!("https://mirrors.huaweicloud.com/git-for-windows/v{}/MinGit-{}-64-bit.zip", tag, ver),
+            format!(
+                "https://mirrors.huaweicloud.com/git-for-windows/v{}/MinGit-{}-64-bit.zip",
+                tag, ver
+            ),
             "华为云镜像",
         ));
         urls.push((
-            format!("https://github.com/git-for-windows/git/releases/download/v{}/MinGit-{}-64-bit.zip", tag, ver),
+            format!(
+                "https://github.com/git-for-windows/git/releases/download/v{}/MinGit-{}-64-bit.zip",
+                tag, ver
+            ),
             "GitHub",
         ));
     }
@@ -309,9 +442,19 @@ fn download_portable_git(app: &AppHandle) -> Option<String> {
         let zip_str = zip_path.to_string_lossy().to_string();
 
         let curl_result = std::process::Command::new("curl.exe")
-            .args(["-L", "--fail", "--silent", "--show-error",
-                   "--connect-timeout", "15", "--max-time", "300",
-                   "-o", &zip_str, url.as_str()])
+            .args([
+                "-L",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--connect-timeout",
+                "15",
+                "--max-time",
+                "300",
+                "-o",
+                &zip_str,
+                url.as_str(),
+            ])
             .output();
         match &curl_result {
             Ok(o) if o.status.success() => {}
@@ -323,7 +466,11 @@ fn download_portable_git(app: &AppHandle) -> Option<String> {
             }
             Err(e) => emit_log(app, &format!("    curl 不可用：{}", e)),
         }
-        if zip_path.exists() && std::fs::metadata(&zip_path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+        if zip_path.exists()
+            && std::fs::metadata(&zip_path)
+                .map(|m| m.len() > 1_000_000)
+                .unwrap_or(false)
+        {
             downloaded = true;
             emit_log(app, &format!("  ✓ 从 {} 下载成功", source));
             break;
@@ -338,7 +485,11 @@ fn download_portable_git(app: &AppHandle) -> Option<String> {
         let _ = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps_cmd])
             .output();
-        if zip_path.exists() && std::fs::metadata(&zip_path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+        if zip_path.exists()
+            && std::fs::metadata(&zip_path)
+                .map(|m| m.len() > 1_000_000)
+                .unwrap_or(false)
+        {
             downloaded = true;
             emit_log(app, &format!("  ✓ 从 {} 下载成功（PowerShell）", source));
             break;
@@ -354,10 +505,15 @@ fn download_portable_git(app: &AppHandle) -> Option<String> {
     emit_log(app, "下载完成，正在解压...");
     let _ = std::fs::create_dir_all(&mingit_dir);
     let extract_ok = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", &format!(
-            "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-            zip_path.to_string_lossy(), mingit_dir.to_string_lossy()
-        )])
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                zip_path.to_string_lossy(),
+                mingit_dir.to_string_lossy()
+            ),
+        ])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
@@ -389,21 +545,33 @@ fn configure_npm_git(app: &AppHandle, git_exe: &str) {
     let line = format!("git={}", git_path_forward);
 
     let home = std::env::var("USERPROFILE").unwrap_or_default();
-    if home.is_empty() { return; }
+    if home.is_empty() {
+        return;
+    }
     let npmrc = std::path::Path::new(&home).join(".npmrc");
 
     let existing = std::fs::read_to_string(&npmrc).unwrap_or_default();
     if existing.contains("git=") {
         let updated: String = existing
             .lines()
-            .map(|l| if l.starts_with("git=") { line.as_str() } else { l })
+            .map(|l| {
+                if l.starts_with("git=") {
+                    line.as_str()
+                } else {
+                    l
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n");
         if std::fs::write(&npmrc, format!("{}\n", updated.trim_end())).is_ok() {
             emit_log(app, &format!("已更新 ~/.npmrc: {}", line));
         }
     } else {
-        match std::fs::OpenOptions::new().append(true).create(true).open(&npmrc) {
+        match std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&npmrc)
+        {
             Ok(mut f) => {
                 if writeln!(f, "{}", line).is_ok() {
                     emit_log(app, &format!("已写入 ~/.npmrc: {}", line));
@@ -461,8 +629,15 @@ fn ensure_git_available(app: &AppHandle) -> bool {
     // 策略 1: winget
     emit_log(app, "正在尝试通过 winget 自动安装 Git for Windows...");
     let winget_ok = std::process::Command::new("winget")
-        .args(["install", "-e", "--id", "Git.Git", "--silent",
-               "--accept-package-agreements", "--accept-source-agreements"])
+        .args([
+            "install",
+            "-e",
+            "--id",
+            "Git.Git",
+            "--silent",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .status()
@@ -486,7 +661,10 @@ fn ensure_git_available(app: &AppHandle) -> bool {
             return true;
         }
     } else {
-        emit_log(app, "winget 自动安装失败（可能系统无 winget 或需要管理员权限）。");
+        emit_log(
+            app,
+            "winget 自动安装失败（可能系统无 winget 或需要管理员权限）。",
+        );
     }
 
     // 策略 2: 下载便携版 MinGit
@@ -530,16 +708,23 @@ async fn run_login_shell_step(
         let shell = detect_login_shell();
         Command::new(&shell)
             .args(["-l", "-c", cmd_str])
-            .stdout(Stdio::piped()).stderr(Stdio::piped())
-            .spawn().map_err(|e| format!("启动命令失败：{}", e))?
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("启动命令失败：{}", e))?
     };
 
     #[cfg(target_os = "windows")]
     let mut child = {
         let mut b = Command::new("cmd");
-        b.args(["/C", cmd_str]).stdout(Stdio::piped()).stderr(Stdio::piped());
+        b.args(["/C", cmd_str])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         if let Some(path) = augmented_path_with_git() {
             b.env("PATH", path);
+        }
+        if let Some(ref safe_home) = safe_home_for_openclaw() {
+            b.env("HOME", safe_home);
         }
         b.spawn().map_err(|e| format!("启动命令失败：{}", e))?
     };
@@ -549,7 +734,9 @@ async fn run_login_shell_step(
     let (mut out_done, mut err_done) = (false, false);
 
     loop {
-        if out_done && err_done { break; }
+        if out_done && err_done {
+            break;
+        }
         tokio::select! {
             _ = &mut *cancel_rx => {
                 let _ = child.kill().await;
@@ -567,8 +754,11 @@ async fn run_login_shell_step(
     }
 
     let status = child.wait().await.map_err(|e| e.to_string())?;
-    if status.success() { Ok(()) }
-    else { Err(format!("进程退出码 {}", status.code().unwrap_or(-1))) }
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("进程退出码 {}", status.code().unwrap_or(-1)))
+    }
 }
 
 /// 用 app 内置 fnm sidecar 运行命令，实时推送 stdout/stderr 到前端。
@@ -581,10 +771,17 @@ async fn run_step(
     use tauri_plugin_shell::process::CommandEvent;
 
     let mut cmd = app.shell().sidecar("fnm").map_err(|e| e.to_string())?;
-    cmd = cmd.args(["--fnm-dir", fnm_dir, "--node-dist-mirror", NODE_DIST_MIRROR]).args(args);
+    cmd = cmd
+        .args(["--fnm-dir", fnm_dir, "--node-dist-mirror", NODE_DIST_MIRROR])
+        .args(args);
     #[cfg(target_os = "windows")]
-    if let Some(path) = augmented_path_with_git() {
-        cmd = cmd.env("PATH", path);
+    {
+        if let Some(path) = augmented_path_with_git() {
+            cmd = cmd.env("PATH", path);
+        }
+        if let Some(ref safe_home) = safe_home_for_openclaw() {
+            cmd = cmd.env("HOME", safe_home);
+        }
     }
     let (mut rx, child) = cmd.spawn().map_err(|e| e.to_string())?;
 
@@ -623,7 +820,11 @@ fn ensure_local_bin_in_path(app: &AppHandle, home_dir: &std::path::Path) {
 
     let export_line = r#"export PATH="$HOME/.local/bin:$PATH""#;
     let shell = detect_login_shell();
-    let profile_name = if shell.contains("zsh") { ".zshrc" } else { ".bash_profile" };
+    let profile_name = if shell.contains("zsh") {
+        ".zshrc"
+    } else {
+        ".bash_profile"
+    };
     let profile = home_dir.join(profile_name);
 
     if let Ok(content) = std::fs::read_to_string(&profile) {
@@ -632,21 +833,34 @@ fn ensure_local_bin_in_path(app: &AppHandle, home_dir: &std::path::Path) {
         }
     }
 
-    match std::fs::OpenOptions::new().append(true).create(true).open(&profile) {
+    match std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&profile)
+    {
         Ok(mut f) => {
             if writeln!(f, "\n# Added by Oclaw\n{}", export_line).is_ok() {
-                emit_log(app, &format!(
-                    "已自动将 ~/.local/bin 添加到 ~/{} 的 PATH 中。",
-                    profile_name
-                ));
-                emit_log(app, "⚠ 请关闭并重新打开终端窗口，使 PATH 配置生效后再执行 openclaw 命令。");
+                emit_log(
+                    app,
+                    &format!(
+                        "已自动将 ~/.local/bin 添加到 ~/{} 的 PATH 中。",
+                        profile_name
+                    ),
+                );
+                emit_log(
+                    app,
+                    "⚠ 请关闭并重新打开终端窗口，使 PATH 配置生效后再执行 openclaw 命令。",
+                );
             }
         }
         Err(_) => {
-            emit_log(app, &format!(
-                "⚠ 无法写入 ~/{}，请手动添加：\n{}",
-                profile_name, export_line
-            ));
+            emit_log(
+                app,
+                &format!(
+                    "⚠ 无法写入 ~/{}，请手动添加：\n{}",
+                    profile_name, export_line
+                ),
+            );
         }
     }
 }
@@ -684,11 +898,15 @@ fn do_symlink(app: &AppHandle, src: &std::path::Path, home_dir: &std::path::Path
         return;
     }
 
-    emit_log(app, &format!(
-        "⚠ 无法自动添加到 PATH，openclaw 位于：{}\n\
+    emit_log(
+        app,
+        &format!(
+            "⚠ 无法自动添加到 PATH，openclaw 位于：{}\n\
          可手动执行：sudo ln -sf '{}' /usr/local/bin/openclaw",
-        src.display(), src.display()
-    ));
+            src.display(),
+            src.display()
+        ),
+    );
 }
 
 /// 用 shell 执行 which_cmd 找到 openclaw 路径，若不在全局 PATH 则尝试软链。
@@ -702,14 +920,21 @@ fn try_symlink_from_which(app: &AppHandle, which_cmd: &str, home_dir: &std::path
     let src = match output {
         Ok(o) if o.status.success() => {
             let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if p.is_empty() { None } else { Some(std::path::PathBuf::from(p)) }
+            if p.is_empty() {
+                None
+            } else {
+                Some(std::path::PathBuf::from(p))
+            }
         }
         _ => None,
     };
 
     match src {
         None => {
-            emit_log(app, "⚠ 无法定位 openclaw 二进制，请确认安装成功后手动添加到 PATH。");
+            emit_log(
+                app,
+                "⚠ 无法定位 openclaw 二进制，请确认安装成功后手动添加到 PATH。",
+            );
         }
         Some(path) => {
             // 已在常见全局 PATH 目录，无需软链
@@ -717,9 +942,15 @@ fn try_symlink_from_which(app: &AppHandle, which_cmd: &str, home_dir: &std::path
                 .iter()
                 .any(|p| path.starts_with(p));
             if is_global {
-                emit_log(app, &format!("openclaw 已在 {}，终端可直接使用。", path.display()));
+                emit_log(
+                    app,
+                    &format!("openclaw 已在 {}，终端可直接使用。", path.display()),
+                );
             } else {
-                emit_log(app, &format!("openclaw 位于 {}，尝试软链到全局 PATH...", path.display()));
+                emit_log(
+                    app,
+                    &format!("openclaw 位于 {}，尝试软链到全局 PATH...", path.display()),
+                );
                 do_symlink(app, &path, home_dir);
             }
         }
@@ -736,7 +967,8 @@ fn try_symlink_bundled_fnm(app: &AppHandle, fnm_dir: &str, home_dir: &std::path:
         .ok()
         .and_then(|mut rd| {
             rd.find(|e| {
-                e.as_ref().ok()
+                e.as_ref()
+                    .ok()
                     .and_then(|e| e.file_name().into_string().ok())
                     .map(|n| n.starts_with("v22."))
                     .unwrap_or(false)
@@ -748,52 +980,76 @@ fn try_symlink_bundled_fnm(app: &AppHandle, fnm_dir: &str, home_dir: &std::path:
 
     match bin_dir {
         Some(bin) => {
-            emit_log(app, &format!(
-                "内置 fnm Node.js 位于 {}，正在添加到终端 PATH...",
-                bin.display()
-            ));
+            emit_log(
+                app,
+                &format!(
+                    "内置 fnm Node.js 位于 {}，正在添加到终端 PATH...",
+                    bin.display()
+                ),
+            );
             add_node_bin_to_shell_profile(app, &bin, home_dir);
         }
         None => {
-            emit_log(app, "⚠ 未在内置 fnm 目录中找到 openclaw 二进制，请确认 npm 安装成功。");
+            emit_log(
+                app,
+                "⚠ 未在内置 fnm 目录中找到 openclaw 二进制，请确认 npm 安装成功。",
+            );
         }
     }
 }
 
 /// 将 node bin 目录写入 shell profile，使 node/npm/openclaw 全部可用。
 #[cfg(not(target_os = "windows"))]
-fn add_node_bin_to_shell_profile(app: &AppHandle, node_bin_dir: &std::path::Path, home_dir: &std::path::Path) {
+fn add_node_bin_to_shell_profile(
+    app: &AppHandle,
+    node_bin_dir: &std::path::Path,
+    home_dir: &std::path::Path,
+) {
     use std::io::Write;
 
     let bin_path_str = node_bin_dir.display().to_string();
     let export_line = format!(r#"export PATH="{}:$PATH""#, bin_path_str);
 
     let shell = detect_login_shell();
-    let profile_name = if shell.contains("zsh") { ".zshrc" } else { ".bash_profile" };
+    let profile_name = if shell.contains("zsh") {
+        ".zshrc"
+    } else {
+        ".bash_profile"
+    };
     let profile = home_dir.join(profile_name);
 
     if let Ok(content) = std::fs::read_to_string(&profile) {
         if content.contains(&bin_path_str) {
-            emit_log(app, &format!(
-                "~/{} 已包含内置 Node.js PATH 配置，跳过。", profile_name
-            ));
+            emit_log(
+                app,
+                &format!("~/{} 已包含内置 Node.js PATH 配置，跳过。", profile_name),
+            );
             return;
         }
     }
 
-    match std::fs::OpenOptions::new().append(true).create(true).open(&profile) {
+    match std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&profile)
+    {
         Ok(mut f) => {
             if writeln!(f, "\n# Added by Oclaw — bundled Node.js\n{}", export_line).is_ok() {
-                emit_log(app, &format!(
-                    "已将内置 Node.js 路径添加到 ~/{} 中。", profile_name
-                ));
+                emit_log(
+                    app,
+                    &format!("已将内置 Node.js 路径添加到 ~/{} 中。", profile_name),
+                );
                 emit_log(app, "重新打开终端后 node、npm、openclaw 等命令均可使用。");
             }
         }
         Err(_) => {
-            emit_log(app, &format!(
-                "⚠ 无法写入 ~/{}，请手动添加以下内容：\n{}", profile_name, export_line
-            ));
+            emit_log(
+                app,
+                &format!(
+                    "⚠ 无法写入 ~/{}，请手动添加以下内容：\n{}",
+                    profile_name, export_line
+                ),
+            );
         }
     }
 }
@@ -838,7 +1094,9 @@ fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::pa
 
     // 尝试找到 openclaw 所在目录并自动加入用户 PATH
     let appdata = std::env::var("APPDATA").unwrap_or_default();
-    let fnm_node_dir = std::path::PathBuf::from(&appdata).join("fnm").join("node-versions");
+    let fnm_node_dir = std::path::PathBuf::from(&appdata)
+        .join("fnm")
+        .join("node-versions");
     let mut dirs_to_add: Vec<String> = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(&fnm_node_dir) {
@@ -860,9 +1118,15 @@ fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::pa
     if !dirs_to_add.is_empty() {
         let added = try_add_to_user_path_windows(app, &dirs_to_add);
         if added {
-            emit_log(app, "已自动将 Node.js 和 openclaw 路径添加到用户 PATH（重启终端后生效）。");
+            emit_log(
+                app,
+                "已自动将 Node.js 和 openclaw 路径添加到用户 PATH（重启终端后生效）。",
+            );
         } else {
-            emit_log(app, "⚠ 自动修改 PATH 失败，请手动将以下目录添加到系统 PATH 环境变量：");
+            emit_log(
+                app,
+                "⚠ 自动修改 PATH 失败，请手动将以下目录添加到系统 PATH 环境变量：",
+            );
             for d in &dirs_to_add {
                 emit_log(app, &format!("  {}", d));
             }
@@ -870,8 +1134,14 @@ fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::pa
     }
 
     emit_log(app, "");
-    emit_log(app, "提示：如需在终端中使用 fnm 管理 Node 版本，请在 PowerShell 配置文件中添加：");
-    emit_log(app, "  fnm env --use-on-cd | Out-String | Invoke-Expression");
+    emit_log(
+        app,
+        "提示：如需在终端中使用 fnm 管理 Node 版本，请在 PowerShell 配置文件中添加：",
+    );
+    emit_log(
+        app,
+        "  fnm env --use-on-cd | Out-String | Invoke-Expression",
+    );
 }
 
 #[cfg(target_os = "windows")]
@@ -881,7 +1151,8 @@ fn try_symlink_bundled_fnm(app: &AppHandle, fnm_dir: &str, _home_dir: &std::path
         .ok()
         .and_then(|mut rd| {
             rd.find(|e| {
-                e.as_ref().ok()
+                e.as_ref()
+                    .ok()
                     .and_then(|e| e.file_name().into_string().ok())
                     .map(|n| n.starts_with("v22."))
                     .unwrap_or(false)
@@ -898,7 +1169,10 @@ fn try_symlink_bundled_fnm(app: &AppHandle, fnm_dir: &str, _home_dir: &std::path
             if added {
                 emit_log(app, "已自动将上述目录添加到用户 PATH（重启终端后生效）。");
             } else {
-                emit_log(app, "如需在命令行中直接使用 openclaw，请将上述目录添加到系统 PATH 环境变量。");
+                emit_log(
+                    app,
+                    "如需在命令行中直接使用 openclaw，请将上述目录添加到系统 PATH 环境变量。",
+                );
             }
         }
         None => {
@@ -929,18 +1203,50 @@ async fn run_install_steps(
 
     let strategy = detect_node_strategy(&home_dir);
 
+    // ── Windows Unicode 路径修正日志 ──────────────────────────────────────────
+    #[cfg(target_os = "windows")]
+    {
+        let home_str = home_dir.to_string_lossy();
+        if !home_str.is_ascii() {
+            match safe_home_for_openclaw() {
+                Some(ref safe) => {
+                    emit_log(app, &format!("⚠ 检测到中文用户路径：{}", home_str));
+                    emit_log(app, &format!("  已自动映射到短路径：{}", safe));
+                    emit_log(app, "  后续 Node.js 进程将使用短路径，避免 fs.rename 异常。");
+                }
+                None => {
+                    emit_log(app, &format!("⚠ 检测到中文用户路径：{}，且无法获取 8.3 短路径。", home_str));
+                    emit_log(app, "  如果安装后遇到 gateway 异常，建议使用纯英文用户名账户。");
+                }
+            }
+            emit_log(app, "");
+        }
+    }
+
     // ── 检测结果日志 ──────────────────────────────────────────────────────────
     match &strategy {
-        NodeStrategy::SystemNode(v) =>
-            emit_log(app, &format!("检测到系统 Node.js v{}（>= 22），将直接使用系统 npm 安装。", v)),
-        NodeStrategy::SystemFnm =>
-            emit_log(app, "检测到系统已安装 fnm，将使用系统 fnm 安装 Node.js 22 并设为默认版本。"),
-        NodeStrategy::SystemNvm =>
-            emit_log(app, "检测到系统已安装 nvm，将使用系统 nvm 安装 Node.js 22 并设为默认版本。"),
+        NodeStrategy::SystemNode(v) => emit_log(
+            app,
+            &format!(
+                "检测到系统 Node.js v{}（>= 22），将直接使用系统 npm 安装。",
+                v
+            ),
+        ),
+        NodeStrategy::SystemFnm => emit_log(
+            app,
+            "检测到系统已安装 fnm，将使用系统 fnm 安装 Node.js 22 并设为默认版本。",
+        ),
+        NodeStrategy::SystemNvm => emit_log(
+            app,
+            "检测到系统已安装 nvm，将使用系统 nvm 安装 Node.js 22 并设为默认版本。",
+        ),
         NodeStrategy::BundledFnm => {
             emit_log(app, "未检测到系统 node 版本管理工具，将使用应用内置 fnm（独立隔离目录）安装 Node.js 22。");
             emit_log(app, &format!("内置 fnm 目录：{}", fnm_dir));
-            emit_log(app, "注意：此模式下在终端执行 `fnm ls` 不会显示这里安装的 node 版本，这是正常现象。");
+            emit_log(
+                app,
+                "注意：此模式下在终端执行 `fnm ls` 不会显示这里安装的 node 版本，这是正常现象。",
+            );
         }
     }
 
@@ -953,7 +1259,10 @@ async fn run_install_steps(
 
     match &strategy {
         NodeStrategy::SystemNode(v) => {
-            emit_log(app, &format!("系统 Node.js v{} 满足要求（>= 22），跳过安装。", v));
+            emit_log(
+                app,
+                &format!("系统 Node.js v{} 满足要求（>= 22），跳过安装。", v),
+            );
             emit_step(app, step1, "done");
         }
         NodeStrategy::SystemFnm => {
@@ -965,7 +1274,10 @@ async fn run_install_steps(
             match run_login_shell_step(app, &fnm_cmd, cancel_rx).await {
                 Ok(()) => emit_step(app, step1, "done"),
                 Err(e) => {
-                    emit_log(app, &format!("⚠ 系统 fnm 安装失败（{}），自动切换到内置 fnm...", e));
+                    emit_log(
+                        app,
+                        &format!("⚠ 系统 fnm 安装失败（{}），自动切换到内置 fnm...", e),
+                    );
                     use_bundled_fnm = true;
                 }
             }
@@ -973,13 +1285,19 @@ async fn run_install_steps(
         NodeStrategy::SystemNvm => {
             emit_log(app, "正在通过系统 nvm 安装 Node.js 22 并设为默认版本...");
             #[cfg(not(target_os = "windows"))]
-            let cmd = format!("source '{}' && nvm install 22 && nvm alias default 22", nvm_sh.display());
+            let cmd = format!(
+                "source '{}' && nvm install 22 && nvm alias default 22",
+                nvm_sh.display()
+            );
             #[cfg(target_os = "windows")]
             let cmd = "nvm install 22 && nvm use 22".to_string();
             match run_login_shell_step(app, &cmd, cancel_rx).await {
                 Ok(()) => emit_step(app, step1, "done"),
                 Err(e) => {
-                    emit_log(app, &format!("⚠ 系统 nvm 安装失败（{}），自动切换到内置 fnm...", e));
+                    emit_log(
+                        app,
+                        &format!("⚠ 系统 nvm 安装失败（{}），自动切换到内置 fnm...", e),
+                    );
                     use_bundled_fnm = true;
                 }
             }
@@ -990,11 +1308,18 @@ async fn run_install_steps(
     }
 
     if use_bundled_fnm {
-        emit_log(app, "正在通过内置 fnm 安装 Node.js 22（首次下载约需 1~2 分钟）...");
+        emit_log(
+            app,
+            "正在通过内置 fnm 安装 Node.js 22（首次下载约需 1~2 分钟）...",
+        );
         emit_log(app, &format!("内置 fnm 目录：{}", fnm_dir));
         match run_step(app, fnm_dir, &["install", "22"], cancel_rx).await {
             Ok(()) => emit_step(app, step1, "done"),
-            Err(e) => { emit_step(app, step1, "error"); emit_error(app, step1, &e); return Err(e); }
+            Err(e) => {
+                emit_step(app, step1, "error");
+                emit_error(app, step1, &e);
+                return Err(e);
+            }
         }
     }
 
@@ -1020,13 +1345,38 @@ async fn run_install_steps(
     let npm_bin = "npm";
 
     let install_result = if use_bundled_fnm {
-        run_step(app, fnm_dir, &["exec", "--using=22", "--", npm_bin, "install", "-g", "openclaw", "--no-update-notifier", "--no-fund"], cancel_rx).await
+        run_step(
+            app,
+            fnm_dir,
+            &[
+                "exec",
+                "--using=22",
+                "--",
+                npm_bin,
+                "install",
+                "-g",
+                "openclaw",
+                "--no-update-notifier",
+                "--no-fund",
+            ],
+            cancel_rx,
+        )
+        .await
     } else {
         match &strategy {
-            NodeStrategy::SystemNode(_) =>
-                run_login_shell_step(app, "npm install -g openclaw --no-update-notifier --no-fund", cancel_rx).await,
+            NodeStrategy::SystemNode(_) => {
+                run_login_shell_step(
+                    app,
+                    "npm install -g openclaw --no-update-notifier --no-fund",
+                    cancel_rx,
+                )
+                .await
+            }
             NodeStrategy::SystemFnm => {
-                let cmd = format!("fnm exec --using=22 -- {} install -g openclaw --no-update-notifier --no-fund", npm_bin);
+                let cmd = format!(
+                    "fnm exec --using=22 -- {} install -g openclaw --no-update-notifier --no-fund",
+                    npm_bin
+                );
                 run_login_shell_step(app, &cmd, cancel_rx).await
             }
             NodeStrategy::SystemNvm => {
@@ -1047,10 +1397,22 @@ async fn run_install_steps(
             emit_log(app, "");
             emit_log(app, "npm 安装失败，常见原因及解决方法：");
             emit_log(app, "  1. 缺少 Git：某些 npm 依赖需要 git。");
-            emit_log(app, "     Windows 请安装 Git for Windows：https://git-scm.com/download/win");
-            emit_log(app, "  2. 网络问题（大陆用户）：可尝试切换 npm 镜像源后重试");
-            emit_log(app, "     npm config set registry https://registry.npmmirror.com");
-            emit_log(app, "  3. 权限问题：尝试在终端手动执行 npm install -g openclaw");
+            emit_log(
+                app,
+                "     Windows 请安装 Git for Windows：https://git-scm.com/download/win",
+            );
+            emit_log(
+                app,
+                "  2. 网络问题（大陆用户）：可尝试切换 npm 镜像源后重试",
+            );
+            emit_log(
+                app,
+                "     npm config set registry https://registry.npmmirror.com",
+            );
+            emit_log(
+                app,
+                "  3. 权限问题：尝试在终端手动执行 npm install -g openclaw",
+            );
             emit_log(app, "  4. 详细日志见 ~/.npm/_logs/ 目录下最新的 debug 文件");
             emit_error(app, step2, &e);
             return Err(e);
@@ -1069,7 +1431,10 @@ async fn run_install_steps(
                 try_symlink_from_which(app, "fnm exec --using=22 -- which openclaw", &home_dir);
             }
             NodeStrategy::SystemNvm => {
-                emit_log(app, "nvm 已将 Node.js 22 设为默认版本，新终端中 node/npm/openclaw 均可直接使用。");
+                emit_log(
+                    app,
+                    "nvm 已将 Node.js 22 设为默认版本，新终端中 node/npm/openclaw 均可直接使用。",
+                );
             }
             NodeStrategy::BundledFnm => unreachable!(),
         }
@@ -1090,7 +1455,10 @@ async fn run_install_steps(
         emit_log(app, "⚠ 当前终端环境尚未识别 openclaw 命令。");
         emit_log(app, "请关闭并重新打开终端窗口（使 PATH 生效），然后执行：");
     }
-    emit_log(app, "下一步：请在终端中运行 openclaw onboard 完成初始化配置。");
+    emit_log(
+        app,
+        "下一步：请在终端中运行 openclaw onboard 完成初始化配置。",
+    );
 
     Ok(())
 }
@@ -1099,27 +1467,39 @@ async fn run_install_steps(
 
 #[tauri::command]
 pub async fn start_install(app: AppHandle) -> Result<(), String> {
-    let state = app.try_state::<InstallerState>().ok_or("InstallerState not found")?;
+    let state = app
+        .try_state::<InstallerState>()
+        .ok_or("InstallerState not found")?;
 
     {
         let mut running = state.running.lock().unwrap();
-        if *running { return Err("安装已在进行中".to_string()); }
+        if *running {
+            return Err("安装已在进行中".to_string());
+        }
         *running = true;
     }
 
     let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
-    { *state.cancel_tx.lock().unwrap() = Some(tx); }
+    {
+        *state.cancel_tx.lock().unwrap() = Some(tx);
+    }
 
-    let fnm_dir = app.path().app_data_dir()
+    let fnm_dir = app
+        .path()
+        .app_data_dir()
         .map(|p| p.join("fnm").to_string_lossy().to_string())
         .unwrap_or_else(|_| {
             let home = std::env::var("HOME")
                 .or_else(|_| std::env::var("USERPROFILE"))
                 .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
             #[cfg(target_os = "windows")]
-            { format!("{}\\AppData\\Local\\claw-browser\\fnm", home) }
+            {
+                format!("{}\\AppData\\Local\\claw-browser\\fnm", home)
+            }
             #[cfg(not(target_os = "windows"))]
-            { format!("{}/.local/share/claw-browser/fnm", home) }
+            {
+                format!("{}/.local/share/claw-browser/fnm", home)
+            }
         });
 
     let app2 = app.clone();
@@ -1128,12 +1508,22 @@ pub async fn start_install(app: AppHandle) -> Result<(), String> {
 
     tauri::async_runtime::spawn(async move {
         let result = run_install_steps(&app2, &fnm_dir, &mut rx).await;
-        { *running2.lock().unwrap() = false; }
-        { *cancel_tx2.lock().unwrap() = None; }
+        {
+            *running2.lock().unwrap() = false;
+        }
+        {
+            *cancel_tx2.lock().unwrap() = None;
+        }
 
         match result {
-            Ok(()) => { let _ = app2.emit("installer:need-onboard", ()); }
-            Err(msg) => { if msg == "已取消" { emit_log(&app2, "安装已取消。"); } }
+            Ok(()) => {
+                let _ = app2.emit("installer:need-onboard", ());
+            }
+            Err(msg) => {
+                if msg == "已取消" {
+                    emit_log(&app2, "安装已取消。");
+                }
+            }
         }
     });
 
@@ -1151,17 +1541,19 @@ pub struct OpenclawInstallStatus {
 
 #[tauri::command]
 pub fn check_openclaw_installed(app: AppHandle) -> OpenclawInstallStatus {
-    let onboarded = app.path().home_dir()
+    let onboarded = app
+        .path()
+        .home_dir()
         .map(|h| h.join(".openclaw").join("openclaw.json").exists())
         .unwrap_or(false);
 
-    let flag_path = app.path().app_data_dir()
+    let flag_path = app
+        .path()
+        .app_data_dir()
         .ok()
         .map(|d| d.join("openclaw-npm-installed.flag"));
 
-    let flag_exists = flag_path.as_ref()
-        .map(|p| p.exists())
-        .unwrap_or(false);
+    let flag_exists = flag_path.as_ref().map(|p| p.exists()).unwrap_or(false);
 
     // flag 存在时，验证 openclaw 命令是否真实可执行，
     // 避免卸载后残留 flag 文件导致误判为已安装。
@@ -1182,14 +1574,126 @@ pub fn check_openclaw_installed(app: AppHandle) -> OpenclawInstallStatus {
         false
     };
 
-    OpenclawInstallStatus { npm_installed, onboarded }
+    OpenclawInstallStatus {
+        npm_installed,
+        onboarded,
+    }
+}
+
+// ─── 环境检测命令 ──────────────────────────────────────────────────────────
+
+/// 环境检测结果，供前端展示安装前的环境状态
+#[derive(Clone, serde::Serialize)]
+pub struct EnvironmentInfo {
+    pub node_version: Option<String>,
+    pub npm_version: Option<String>,
+    pub git_version: Option<String>,
+    pub has_nvm: bool,
+    pub has_fnm: bool,
+    pub strategy: String,
+    /// Windows: 用户主目录包含非 ASCII 字符（中文用户名），可能导致 Node.js 文件操作异常
+    pub unicode_home_warning: bool,
+    /// Windows: 已解析的 ASCII 安全短路径（8.3 格式），None 表示无法自动修正
+    pub safe_home: Option<String>,
+}
+
+fn detect_system_npm_version() -> Option<String> {
+    let out = run_in_shell("npm --version").ok()?;
+    if !out.status.success() { return None; }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+fn detect_system_git_version() -> Option<String> {
+    let out = run_in_shell("git --version").ok()?;
+    if !out.status.success() { return None; }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let ver = s.strip_prefix("git version ").unwrap_or(&s).trim().to_string();
+    if ver.is_empty() { None } else { Some(ver) }
+}
+
+#[tauri::command]
+pub fn detect_environment(app: AppHandle) -> EnvironmentInfo {
+    let home_dir = app.path().home_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    let node_version = run_in_shell("node --version")
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let npm_version = detect_system_npm_version();
+
+    #[allow(unused_mut)]
+    let mut git_version = detect_system_git_version();
+    #[cfg(target_os = "windows")]
+    if git_version.is_none() {
+        if let Some(dir) = find_git_cmd_dir() {
+            let git_exe = format!(r"{}\git.exe", dir);
+            if let Ok(o) = std::process::Command::new(&git_exe).arg("--version").output() {
+                if o.status.success() {
+                    let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    let ver = s.strip_prefix("git version ").unwrap_or(&s).trim().to_string();
+                    if !ver.is_empty() { git_version = Some(ver); }
+                }
+            }
+        }
+    }
+
+    let has_nvm = {
+        #[cfg(not(target_os = "windows"))]
+        { home_dir.join(".nvm").join("nvm.sh").exists() }
+        #[cfg(target_os = "windows")]
+        {
+            let nvm_exe = std::env::var("APPDATA")
+                .map(|a| std::path::PathBuf::from(a).join("nvm").join("nvm.exe"))
+                .unwrap_or_default();
+            nvm_exe.exists()
+                || run_in_shell("nvm version").map(|o| o.status.success()).unwrap_or(false)
+        }
+    };
+
+    let has_fnm = detect_system_fnm();
+
+    let strategy = {
+        let st = detect_node_strategy(&home_dir);
+        match st {
+            NodeStrategy::SystemNode(v) => format!("将直接使用系统 Node.js v{}", v),
+            NodeStrategy::SystemNvm => "将使用系统 nvm 安装 Node.js 22".to_string(),
+            NodeStrategy::SystemFnm => "将使用系统 fnm 安装 Node.js 22".to_string(),
+            NodeStrategy::BundledFnm => "将使用应用内置 fnm 安装 Node.js 22".to_string(),
+        }
+    };
+
+    let (unicode_home_warning, safe_home) = {
+        #[cfg(target_os = "windows")]
+        {
+            let home = std::env::var("USERPROFILE").unwrap_or_default();
+            if !home.is_ascii() {
+                (true, safe_home_for_openclaw())
+            } else {
+                (false, None)
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        { (false, None) }
+    };
+
+    EnvironmentInfo {
+        node_version, npm_version, git_version,
+        has_nvm, has_fnm, strategy,
+        unicode_home_warning, safe_home,
+    }
 }
 
 #[tauri::command]
 pub async fn cancel_install(app: AppHandle) -> Result<(), String> {
-    let state = app.try_state::<InstallerState>().ok_or("InstallerState not found")?;
+    let state = app
+        .try_state::<InstallerState>()
+        .ok_or("InstallerState not found")?;
     let mut guard = state.cancel_tx.lock().unwrap();
-    if let Some(tx) = guard.take() { let _ = tx.send(()); }
+    if let Some(tx) = guard.take() {
+        let _ = tx.send(());
+    }
     Ok(())
 }
-

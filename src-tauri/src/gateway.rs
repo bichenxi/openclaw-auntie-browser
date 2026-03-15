@@ -228,10 +228,12 @@ pub fn restart_openclaw_gateway() -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        match std::process::Command::new("cmd")
-            .args(["/C", "openclaw gateway restart"])
-            .output()
-        {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", "openclaw gateway restart"]);
+        if let Some(ref safe_home) = crate::installer::safe_home_for_openclaw() {
+            cmd.env("HOME", safe_home);
+        }
+        match cmd.output() {
             Ok(o) if o.status.success() => Ok(()),
             Ok(o) => {
                 let stderr = String::from_utf8_lossy(&o.stderr).to_string();
