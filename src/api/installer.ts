@@ -39,3 +39,19 @@ export async function checkOpenclawInstalled(): Promise<OpenclawInstallStatus> {
 export async function detectEnvironment(): Promise<EnvironmentInfo> {
   return invoke<EnvironmentInfo>('detect_environment')
 }
+
+export interface UninstallStepResult {
+  name: string
+  ok: boolean
+  detail: string
+}
+
+export interface UninstallResult {
+  success: boolean
+  steps: UninstallStepResult[]
+}
+
+/** 一键彻底卸载 OpenClaw / Node.js / fnm */
+export async function fullUninstall(): Promise<UninstallResult> {
+  return invoke<UninstallResult>('full_uninstall')
+}

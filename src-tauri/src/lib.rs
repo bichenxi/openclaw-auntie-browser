@@ -86,6 +86,7 @@ pub fn run() {
             installer::cancel_install,
             installer::check_openclaw_installed,
             installer::detect_environment,
+            installer::full_uninstall,
             configure::run_onboard,
             configure::start_onboard_pty,
             configure::write_onboard_stdin,

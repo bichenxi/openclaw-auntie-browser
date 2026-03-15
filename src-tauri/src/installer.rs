@@ -1902,3 +1902,256 @@ pub async fn cancel_install(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+// ─── 一键彻底卸载 ──────────────────────────────────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+pub struct UninstallResult {
+    pub success: bool,
+    pub steps: Vec<UninstallStepResult>,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct UninstallStepResult {
+    pub name: String,
+    pub ok: bool,
+    pub detail: String,
+}
+
+#[tauri::command]
+pub async fn full_uninstall(app: AppHandle) -> Result<UninstallResult, String> {
+    let mut steps: Vec<UninstallStepResult> = Vec::new();
+
+    emit_log(&app, "开始全局卸载 OpenClaw / Node.js / fnm …");
+    emit_log(&app, "");
+
+    // ── 1. 停止 OpenClaw gateway ────────────────────────────────────────
+    emit_log(&app, "▶ 步骤 1/6：停止 OpenClaw 进程…");
+    let stop_ok = run_in_shell("openclaw gateway stop")
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if stop_ok {
+        emit_log(&app, "  已停止 OpenClaw gateway。");
+    } else {
+        emit_log(&app, "  未检测到运行中的 OpenClaw 进程（已跳过）。");
+    }
+    steps.push(UninstallStepResult {
+        name: "停止 OpenClaw 进程".into(),
+        ok: true,
+        detail: if stop_ok { "已停止" } else { "无运行进程" }.into(),
+    });
+
+    // ── 2. npm uninstall -g openclaw ────────────────────────────────────
+    emit_log(&app, "▶ 步骤 2/6：卸载 OpenClaw npm 包…");
+    let npm_ok = run_in_shell("npm uninstall -g openclaw")
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if npm_ok {
+        emit_log(&app, "  npm uninstall -g openclaw 成功。");
+    } else {
+        emit_log(&app, "  npm uninstall 失败或 npm 不可用，将直接删除目录。");
+    }
+    steps.push(UninstallStepResult {
+        name: "卸载 OpenClaw npm 包".into(),
+        ok: npm_ok,
+        detail: if npm_ok { "已卸载" } else { "npm 不可用" }.into(),
+    });
+
+    // ── 3. 删除 ~/.openclaw 配置目录 ────────────────────────────────────
+    emit_log(&app, "▶ 步骤 3/6：删除 OpenClaw 配置目录…");
+    let oc_dir = openclaw_dir(&app);
+    let oc_ok = match &oc_dir {
+        Ok(d) if d.exists() => {
+            emit_log(&app, &format!("  删除 {}…", d.display()));
+            std::fs::remove_dir_all(d).is_ok()
+        }
+        Ok(d) => {
+            emit_log(&app, &format!("  {} 不存在，跳过。", d.display()));
+            true
+        }
+        Err(e) => {
+            emit_log(&app, &format!("  无法确定路径：{}", e));
+            false
+        }
+    };
+    #[cfg(target_os = "windows")]
+    {
+        // Windows safe_home 场景下可能存在额外的 .openclaw 目录
+        if let Some(ref safe) = safe_home_for_openclaw() {
+            let extra = std::path::PathBuf::from(safe).join(".openclaw");
+            if extra.exists() {
+                emit_log(&app, &format!("  删除 {}…", extra.display()));
+                let _ = std::fs::remove_dir_all(&extra);
+            }
+        }
+    }
+    steps.push(UninstallStepResult {
+        name: "删除 OpenClaw 配置".into(),
+        ok: oc_ok,
+        detail: oc_dir
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|e| e),
+    });
+
+    // ── 4. 删除内置 fnm 目录（含 Node.js） ──────────────────────────────
+    emit_log(&app, "▶ 步骤 4/6：删除内置 fnm 及 Node.js…");
+    let fnm_dir = app
+        .path()
+        .app_data_dir()
+        .map(|p| p.join("fnm"))
+        .ok();
+    let fnm_ok = match &fnm_dir {
+        Some(d) if d.exists() => {
+            emit_log(&app, &format!("  删除 {}…", d.display()));
+            std::fs::remove_dir_all(d).is_ok()
+        }
+        Some(d) => {
+            emit_log(&app, &format!("  {} 不存在，跳过。", d.display()));
+            true
+        }
+        None => {
+            emit_log(&app, "  无法确定 app_data_dir，跳过。");
+            false
+        }
+    };
+    steps.push(UninstallStepResult {
+        name: "删除内置 fnm / Node.js".into(),
+        ok: fnm_ok,
+        detail: fnm_dir
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "未知路径".into()),
+    });
+
+    // ── 5. 删除安装标记文件 ─────────────────────────────────────────────
+    emit_log(&app, "▶ 步骤 5/6：清理安装标记…");
+    let flag_path = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("openclaw-npm-installed.flag"));
+    let flag_ok = match &flag_path {
+        Some(p) if p.exists() => {
+            let _ = std::fs::remove_file(p);
+            emit_log(&app, "  已删除安装标记。");
+            true
+        }
+        Some(_) => {
+            emit_log(&app, "  标记文件不存在，跳过。");
+            true
+        }
+        None => true,
+    };
+    steps.push(UninstallStepResult {
+        name: "清理安装标记".into(),
+        ok: flag_ok,
+        detail: "已清理".into(),
+    });
+
+    // ── 6. 清理 shell profile（仅 Unix） ────────────────────────────────
+    emit_log(&app, "▶ 步骤 6/6：清理 shell 配置…");
+    let profile_ok = clean_shell_profile(&app);
+    steps.push(UninstallStepResult {
+        name: "清理 shell 配置".into(),
+        ok: profile_ok,
+        detail: if profile_ok { "已清理" } else { "跳过或失败" }.into(),
+    });
+
+    emit_log(&app, "");
+    emit_log(&app, "卸载完成！如需重新安装，请在首页点击「一键安装」。");
+    emit_log(&app, "提示：重新打开终端窗口以使 PATH 变更生效。");
+
+    let success = steps.iter().all(|s| s.ok);
+    let result = UninstallResult { success, steps };
+
+    let _ = app.emit("installer:uninstall-done", result.clone());
+    Ok(result)
+}
+
+/// 清理 shell profile 中由 Oclaw 添加的 PATH 行。
+fn clean_shell_profile(app: &AppHandle) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        // Windows 下由 try_add_to_user_path_windows 添加到用户 PATH，
+        // 需通过 PowerShell 清理。
+        clean_user_path_windows(app)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = match app.path().home_dir() {
+            Ok(h) => h,
+            Err(_) => return false,
+        };
+        let marker = "# Added by Oclaw";
+        let mut cleaned_any = false;
+
+        for profile_name in &[".zshrc", ".bash_profile", ".bashrc", ".profile"] {
+            let path = home.join(profile_name);
+            if !path.exists() {
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            if !content.contains(marker) {
+                continue;
+            }
+            let filtered: Vec<&str> = content
+                .lines()
+                .filter(|line| {
+                    !line.contains(marker)
+                        && !line.contains("claw-browser/fnm/node-versions")
+                })
+                .collect();
+            // 去除因删除行产生的多余空行（最多保留一个）
+            let mut result = String::new();
+            let mut prev_empty = false;
+            for line in filtered {
+                let is_empty = line.trim().is_empty();
+                if is_empty && prev_empty {
+                    continue;
+                }
+                result.push_str(line);
+                result.push('\n');
+                prev_empty = is_empty;
+            }
+            let trimmed = result.trim_end().to_string() + "\n";
+            if std::fs::write(&path, &trimmed).is_ok() {
+                emit_log(
+                    app,
+                    &format!("  已清理 ~/{} 中 Oclaw 添加的 PATH 配置。", profile_name),
+                );
+                cleaned_any = true;
+            }
+        }
+
+        if !cleaned_any {
+            emit_log(app, "  未发现 Oclaw 添加的 shell 配置（已跳过）。");
+        }
+        true
+    }
+}
+
+/// Windows: 从用户 PATH 中移除包含 claw-browser 的目录。
+#[cfg(target_os = "windows")]
+fn clean_user_path_windows(app: &AppHandle) -> bool {
+    let ps_script = r#"
+$p = [Environment]::GetEnvironmentVariable('PATH','User')
+if (-not $p) { exit 0 }
+$dirs = $p.Split(';') | Where-Object { $_ -notmatch 'claw-browser' }
+$newP = ($dirs -join ';')
+[Environment]::SetEnvironmentVariable('PATH',$newP,'User')
+"#;
+    let ok = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if ok {
+        emit_log(app, "  已从用户 PATH 中移除 Oclaw 相关目录。");
+    } else {
+        emit_log(app, "  清理用户 PATH 失败，请手动检查环境变量。");
+    }
+    ok
+}

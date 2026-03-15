@@ -5,6 +5,7 @@ import { useOnboardStore } from '@/stores/onboard'
 import { checkOpenclawAlive } from '@/api/openclaw'
 import { getOpenclawGatewayToken } from '@/api/skills'
 import { checkAndFixGatewayConfig, restartOpenclawGateway, type GatewayConfigStatus } from '@/api/gateway'
+import { fullUninstall, type UninstallResult } from '@/api/installer'
 
 const settings = useSettingsStore()
 const onboardStore = useOnboardStore()
@@ -25,6 +26,27 @@ const checkingGateway = ref(false)
 const restartingGateway = ref(false)
 const restartError = ref('')
 const restartSuccess = ref(false)
+
+// ── 一键卸载 ────────────────────────────────────────────────
+const uninstalling = ref(false)
+const uninstallConfirm = ref(false)
+const uninstallResult = ref<UninstallResult | null>(null)
+
+async function doUninstall() {
+  uninstalling.value = true
+  uninstallResult.value = null
+  try {
+    uninstallResult.value = await fullUninstall()
+  } catch (e: any) {
+    uninstallResult.value = {
+      success: false,
+      steps: [{ name: '卸载失败', ok: false, detail: e?.message ?? String(e) }],
+    }
+  } finally {
+    uninstalling.value = false
+    uninstallConfirm.value = false
+  }
+}
 
 async function checkGatewayConfig() {
   checkingGateway.value = true
@@ -356,6 +378,89 @@ onMounted(refreshStatus)
               </svg>
               <span v-else class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
               {{ restartingGateway ? '重启中…' : '重启 Gateway' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 危险操作：一键卸载 ── -->
+      <div class="bg-white border border-[rgba(239,68,68,0.25)] rounded-[12px] overflow-hidden mb-4">
+        <div class="flex items-center gap-[7px] px-5 py-3.5 border-b border-[rgba(239,68,68,0.12)]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            <line x1="10" y1="11" x2="10" y2="17" />
+            <line x1="14" y1="11" x2="14" y2="17" />
+          </svg>
+          <span class="text-[13px] font-semibold text-accent">一键彻底卸载</span>
+        </div>
+        <div class="p-5">
+          <p class="text-[11px] text-[#9b8ec4] m-0 mb-3 leading-[1.6]">
+            彻底移除 OpenClaw npm 包、<code class="bg-[#f5f3ff] text-secondary px-1 py-px rounded text-[10px]">~/.openclaw</code> 配置目录、内置 fnm 及 Node.js、shell 配置中添加的 PATH。此操作不可逆。
+          </p>
+
+          <!-- 卸载结果 -->
+          <div v-if="uninstallResult" class="mb-3">
+            <div
+              v-for="step in uninstallResult.steps"
+              :key="step.name"
+              class="flex items-center gap-2 text-[12px] py-1"
+            >
+              <svg v-if="step.ok" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
+                <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <span :class="step.ok ? 'text-[#15803d]' : 'text-[#dc2626]'">{{ step.name }}</span>
+              <span class="text-[#c4bdd8] text-[11px]">{{ step.detail }}</span>
+            </div>
+            <div
+              class="flex items-center gap-2 mt-2 px-3 py-2 rounded-[8px] text-[12px]"
+              :class="uninstallResult.success
+                ? 'bg-[rgba(34,197,94,0.07)] text-[#15803d]'
+                : 'bg-[rgba(239,68,68,0.06)] text-[#dc2626]'"
+            >
+              <svg v-if="uninstallResult.success" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              {{ uninstallResult.success ? '卸载完成，请重新打开终端使 PATH 变更生效。' : '部分步骤失败，请检查日志。' }}
+            </div>
+          </div>
+
+          <!-- 确认流程 -->
+          <div v-if="!uninstallConfirm" class="flex items-center gap-3">
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-medium rounded-[8px] border cursor-pointer transition border-[rgba(239,68,68,0.3)] text-accent bg-[rgba(239,68,68,0.04)] hover:bg-[rgba(239,68,68,0.1)] disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="uninstalling"
+              @click="uninstallConfirm = true; uninstallResult = null"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
+              一键卸载 OpenClaw + Node.js + fnm
+            </button>
+          </div>
+          <div v-else class="flex items-center gap-3">
+            <span class="text-[12px] text-accent font-medium">确定要彻底卸载吗？此操作不可逆！</span>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 px-3.5 py-2 text-[12px] font-medium rounded-[8px] border cursor-pointer transition border-accent text-white bg-accent hover:bg-[#dc2626] disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="uninstalling"
+              @click="doUninstall"
+            >
+              <span v-if="uninstalling" class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              {{ uninstalling ? '卸载中…' : '确认卸载' }}
+            </button>
+            <button
+              type="button"
+              class="px-3.5 py-2 text-[12px] rounded-[8px] border border-[#e8e2f4] text-[#8a80a7] bg-transparent cursor-pointer transition hover:bg-[#f5f3ff]"
+              :disabled="uninstalling"
+              @click="uninstallConfirm = false"
+            >
+              取消
             </button>
           </div>
         </div>
