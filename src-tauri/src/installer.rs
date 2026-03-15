@@ -249,46 +249,6 @@ pub(crate) fn safe_home_for_openclaw() -> Option<String> {
     }).clone()
 }
 
-// ─── Windows Unicode 路径修正 ─────────────────────────────────────────────────
-//
-// Windows 用户名含中文（如 `C:\Users\毕晨曦`）时，Node.js 的 fs.rename（原子写入）
-// 可能失败，导致 OpenClaw gateway 配置文件写入异常、进程闪退（WebSocket 1006）。
-//
-// 修正策略：获取用户目录的 8.3 短路径名（如 `C:\Users\BICHEN~1`），通过 HOME 环境变量
-// 让 Node.js 的 os.homedir() 返回纯 ASCII 路径。短路径指向同一目录，对应用透明。
-
-#[cfg(target_os = "windows")]
-static SAFE_HOME_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-
-/// 通过 PowerShell FileSystemObject 获取 Windows 8.3 短路径名（纯 ASCII）。
-#[cfg(target_os = "windows")]
-fn get_short_path_name(long_path: &str) -> Option<String> {
-    let ps_cmd = format!(
-        "$fso = New-Object -ComObject Scripting.FileSystemObject; $fso.GetFolder('{}').ShortPath",
-        long_path.replace('\'', "''")
-    );
-    std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() || !s.is_ascii() { None } else { Some(s) }
-        })
-}
-
-/// 当用户主目录包含非 ASCII 字符时，返回 ASCII 安全的 8.3 短路径；否则返回 None。
-/// 结果被 OnceLock 缓存，仅首次调用执行 PowerShell。
-#[cfg(target_os = "windows")]
-pub(crate) fn safe_home_for_openclaw() -> Option<String> {
-    SAFE_HOME_CACHE.get_or_init(|| {
-        let home = std::env::var("USERPROFILE").ok()?;
-        if home.is_ascii() { return None; }
-        get_short_path_name(&home)
-    }).clone()
-}
-
 // ─── Windows 工具路径补全 ────────────────────────────────────────────────────
 
 /// 运行时发现/下载的 Git 目录，跨线程共享。
