@@ -134,6 +134,22 @@ pub(crate) fn run_in_shell(cmd: &str) -> std::io::Result<std::process::Output> {
     }
 }
 
+/// Windows: 通过 cmd /C 运行命令，注入增强 PATH / HOME / NPM_CONFIG_PREFIX。
+/// 解决 Tauri app 进程默认 PATH 不含 npm global bin 的问题。
+#[cfg(target_os = "windows")]
+fn run_in_shell_with_env(app: &AppHandle, cmd: &str) -> std::io::Result<std::process::Output> {
+    let mut c = std::process::Command::new("cmd");
+    c.args(["/C", cmd]);
+    c.env("PATH", build_openclaw_env_path(app));
+    if let Some(ref safe_home) = safe_home_for_openclaw() {
+        c.env("HOME", safe_home);
+    }
+    if let Some(ref prefix) = safe_npm_prefix() {
+        c.env("NPM_CONFIG_PREFIX", prefix);
+    }
+    c.output()
+}
+
 /// 检测 node major 版本，返回 None 表示未安装或无法检测。
 fn detect_system_node_major() -> Option<u32> {
     let out = run_in_shell("node --version").ok()?;
@@ -1318,7 +1334,7 @@ fn try_add_to_user_path_windows(app: &AppHandle, dirs: &[String]) -> bool {
 
 #[cfg(target_os = "windows")]
 fn try_symlink_from_which(app: &AppHandle, _which_cmd: &str, _home_dir: &std::path::Path) {
-    let verified = run_in_shell("openclaw --version")
+    let verified = run_in_shell_with_env(app, "openclaw --version")
         .map(|o| o.status.success())
         .unwrap_or(false);
     if verified {
@@ -1706,9 +1722,20 @@ async fn run_install_steps(
     write_installed_marker(app);
 
     // ── 最终验证：在登录 shell 中确认 openclaw 可访问 ──────────────────────
-    let verified = run_in_shell("openclaw --version")
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let verified = {
+        #[cfg(target_os = "windows")]
+        {
+            run_in_shell_with_env(app, "openclaw --version")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            run_in_shell("openclaw --version")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+    };
 
     emit_log(app, "");
     emit_log(app, "OpenClaw 安装完成！");
@@ -1821,11 +1848,21 @@ pub fn check_openclaw_installed(app: AppHandle) -> OpenclawInstallStatus {
     let npm_installed = if onboarded {
         true
     } else if flag_exists {
-        let actually_installed = run_in_shell("openclaw --version")
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+        let actually_installed = {
+            #[cfg(target_os = "windows")]
+            {
+                run_in_shell_with_env(&app, "openclaw --version")
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                run_in_shell("openclaw --version")
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+            }
+        };
         if !actually_installed {
-            // 清理残留 flag，下次直接走安装流程
             if let Some(p) = &flag_path {
                 let _ = std::fs::remove_file(p);
             }
@@ -2022,9 +2059,20 @@ pub async fn full_uninstall(app: AppHandle) -> Result<UninstallResult, String> {
 
     // ── 1. 停止 OpenClaw gateway ────────────────────────────────────────
     emit_log(&app, "▶ 步骤 1/6：停止 OpenClaw 进程…");
-    let stop_ok = run_in_shell("openclaw gateway stop")
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let stop_ok = {
+        #[cfg(target_os = "windows")]
+        {
+            run_in_shell_with_env(&app, "openclaw gateway stop")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            run_in_shell("openclaw gateway stop")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+    };
     if stop_ok {
         emit_log(&app, "  已停止 OpenClaw gateway。");
     } else {
@@ -2038,9 +2086,20 @@ pub async fn full_uninstall(app: AppHandle) -> Result<UninstallResult, String> {
 
     // ── 2. npm uninstall -g openclaw ────────────────────────────────────
     emit_log(&app, "▶ 步骤 2/6：卸载 OpenClaw npm 包…");
-    let npm_ok = run_in_shell("npm uninstall -g openclaw")
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+    let npm_ok = {
+        #[cfg(target_os = "windows")]
+        {
+            run_in_shell_with_env(&app, "npm uninstall -g openclaw")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            run_in_shell("npm uninstall -g openclaw")
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+    };
     if npm_ok {
         emit_log(&app, "  npm uninstall -g openclaw 成功。");
     } else {
