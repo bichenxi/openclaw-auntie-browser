@@ -543,8 +543,8 @@ fn configure_npm_git(app: &AppHandle, git_exe: &str) {
 }
 
 /// Windows: 检测 Git 是否可用，不可用时依次尝试：
-/// 1. winget 安装（需要管理员权限）
-/// 2. 下载便携版 MinGit（无需管理员权限）
+/// 1. 下载便携版 MinGit（无需管理员权限，首选）
+/// 2. winget 安装 Git for Windows（降级方案，可能弹 UAC）
 /// 3. 提示手动安装
 /// 返回 true 表示 git 已可用。
 #[cfg(target_os = "windows")]
@@ -586,8 +586,17 @@ fn ensure_git_available(app: &AppHandle) -> bool {
     emit_log(app, "");
     emit_log(app, "⚠ 未检测到 Git，openclaw 的部分依赖需要 git 来安装。");
 
-    // 策略 1: winget
-    emit_log(app, "正在尝试通过 winget 自动安装 Git for Windows...");
+    // 策略 1: 下载便携版 MinGit（无需管理员权限，体验最一键化）
+    emit_log(app, "正在下载便携版 MinGit（无需管理员权限）...");
+    if let Some(git_dir) = download_portable_git(app) {
+        let git_exe = format!(r"{}\git.exe", git_dir);
+        remember_git_dir(&git_dir);
+        configure_npm_git(app, &git_exe);
+        return true;
+    }
+
+    // 策略 2: winget（MinGit 下载失败时降级，可能弹 UAC）
+    emit_log(app, "MinGit 下载失败，尝试通过 winget 安装 Git for Windows...");
     let winget_ok = std::process::Command::new("winget")
         .args([
             "install",
@@ -621,19 +630,7 @@ fn ensure_git_available(app: &AppHandle) -> bool {
             return true;
         }
     } else {
-        emit_log(
-            app,
-            "winget 自动安装失败（可能系统无 winget 或需要管理员权限）。",
-        );
-    }
-
-    // 策略 2: 下载便携版 MinGit
-    emit_log(app, "正在尝试下载便携版 MinGit（无需管理员权限）...");
-    if let Some(git_dir) = download_portable_git(app) {
-        let git_exe = format!(r"{}\git.exe", git_dir);
-        remember_git_dir(&git_dir);
-        configure_npm_git(app, &git_exe);
-        return true;
+        emit_log(app, "winget 安装也失败（可能系统无 winget 或需要管理员权限）。");
     }
 
     // 策略 3: 手动安装指引
@@ -646,6 +643,25 @@ fn ensure_git_available(app: &AppHandle) -> bool {
 }
 
 // ─── 命令执行（流式输出）─────────────────────────────────────────────────────
+
+/// 通过 GIT_CONFIG_* 环境变量让 Git 将 GitHub SSH URL 自动改写为 HTTPS，
+/// 避免 npm 依赖中 `ssh://git@github.com/...` 地址触发 SSH 鉴权
+/// （用户通常没有配置 GitHub SSH 密钥；且 MinGit MSYS 层对中文路径下的
+/// `.ssh` 目录处理会乱码）。
+#[cfg(target_os = "windows")]
+fn inject_git_https_override(cmd: &mut tokio::process::Command) {
+    cmd.env("GIT_CONFIG_COUNT", "2")
+        .env(
+            "GIT_CONFIG_KEY_0",
+            "url.https://github.com/.insteadOf",
+        )
+        .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
+        .env(
+            "GIT_CONFIG_KEY_1",
+            "url.https://github.com/.insteadOf",
+        )
+        .env("GIT_CONFIG_VALUE_1", "git@github.com:");
+}
 
 /// npm notice / npm warn EBADENGINE 等纯噪音行，不向前端显示。
 fn is_npm_noise(line: &str) -> bool {
@@ -686,6 +702,7 @@ async fn run_login_shell_step(
         if let Some(ref safe_home) = safe_home_for_openclaw() {
             b.env("HOME", safe_home);
         }
+        inject_git_https_override(&mut b);
         b.spawn().map_err(|e| format!("启动命令失败：{}", e))?
     };
 
@@ -742,6 +759,12 @@ async fn run_step(
         if let Some(ref safe_home) = safe_home_for_openclaw() {
             cmd = cmd.env("HOME", safe_home);
         }
+        cmd = cmd
+            .env("GIT_CONFIG_COUNT", "2")
+            .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
+            .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
+            .env("GIT_CONFIG_KEY_1", "url.https://github.com/.insteadOf")
+            .env("GIT_CONFIG_VALUE_1", "git@github.com:");
     }
     let (mut rx, child) = cmd.spawn().map_err(|e| e.to_string())?;
 
