@@ -207,10 +207,12 @@ fn detect_node_strategy(home_dir: &std::path::Path) -> NodeStrategy {
 // Windows 用户名含中文（如 `C:\Users\毕晨曦`）时，Node.js 的 fs.rename（原子写入）
 // 可能失败，导致 OpenClaw gateway 配置文件写入异常、进程闪退（WebSocket 1006）。
 //
-// 修正策略：获取用户目录的 8.3 短路径名（如 `C:\Users\BICHEN~1`），通过 HOME 环境变量
-// 让 Node.js 的 os.homedir() 返回纯 ASCII 路径。短路径指向同一目录，对应用透明。
+// 修正策略（优先级从高到低）：
+//   1. 使用 C:\Users 作为 HOME，.openclaw 目录落在 C:\Users\.openclaw，彻底回避中文路径。
+//   2. 若 C:\Users 不可写（无管理员权限），回退到用户目录的 8.3 短路径名。
+//   3. 都不行则返回 None，使用原始路径。
 
-/// 缓存短路径检测结果，避免每次启动进程都调用 PowerShell。
+/// 缓存检测结果，避免每次启动进程都调用 PowerShell / 创建目录。
 #[cfg(target_os = "windows")]
 static SAFE_HOME_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
@@ -220,7 +222,6 @@ fn path_has_non_ascii(s: &str) -> bool {
 }
 
 /// 通过 Windows 8.3 短路径获取纯 ASCII 路径。
-/// 8.3 短路径名是 NTFS 文件系统为长文件名/非 ASCII 文件名生成的别名，指向同一目录。
 #[cfg(target_os = "windows")]
 fn get_short_path_name(long_path: &str) -> Option<String> {
     let ps_cmd = format!(
@@ -242,8 +243,44 @@ fn get_short_path_name(long_path: &str) -> Option<String> {
         })
 }
 
-/// 当用户主目录包含非 ASCII 字符时，返回 ASCII 安全的短路径；否则返回 None。
-/// 结果被缓存，仅首次调用执行 PowerShell 检测。
+/// 尝试将旧位置（用户主目录下）的 .openclaw 配置迁移到 C:\Users\.openclaw。
+/// 仅在新目录为空且旧目录存在时执行，避免覆盖已有数据。
+#[cfg(target_os = "windows")]
+fn migrate_openclaw_config(old_home: &str, new_home: &str) {
+    let old_dir = std::path::Path::new(old_home).join(".openclaw");
+    let new_dir = std::path::Path::new(new_home).join(".openclaw");
+    if !old_dir.exists() {
+        return;
+    }
+    let new_config = new_dir.join("openclaw.json");
+    if new_config.exists() {
+        return;
+    }
+    let old_config = old_dir.join("openclaw.json");
+    if !old_config.exists() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(&new_dir);
+    fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) {
+        if let Ok(rd) = std::fs::read_dir(src) {
+            for entry in rd.flatten() {
+                let path = entry.path();
+                let dest = dst.join(entry.file_name());
+                if path.is_dir() {
+                    let _ = std::fs::create_dir_all(&dest);
+                    copy_dir_recursive(&path, &dest);
+                } else {
+                    let _ = std::fs::copy(&path, &dest);
+                }
+            }
+        }
+    }
+    copy_dir_recursive(&old_dir, &new_dir);
+}
+
+/// 当用户主目录包含非 ASCII 字符时，返回 ASCII 安全的 HOME 路径；否则返回 None。
+/// 优先使用 `C:\Users`（.openclaw 落在 `C:\Users\.openclaw`），
+/// 不可写时回退到 8.3 短路径。结果被缓存。
 #[cfg(target_os = "windows")]
 pub(crate) fn safe_home_for_openclaw() -> Option<String> {
     SAFE_HOME_CACHE
@@ -252,9 +289,30 @@ pub(crate) fn safe_home_for_openclaw() -> Option<String> {
             if !path_has_non_ascii(&home) {
                 return None;
             }
+            // 策略 1：C:\Users\.openclaw
+            let users_dir = r"C:\Users";
+            let probe_dir = std::path::Path::new(users_dir).join(".openclaw");
+            if std::fs::create_dir_all(&probe_dir).is_ok() {
+                migrate_openclaw_config(&home, users_dir);
+                return Some(users_dir.to_string());
+            }
+            // 策略 2：8.3 短路径
             get_short_path_name(&home)
         })
         .clone()
+}
+
+/// 返回 .openclaw 目录的实际路径（跨平台）。
+/// Windows 非 ASCII 用户名时使用 safe home（C:\Users\.openclaw 或 8.3 短路径）。
+pub fn openclaw_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(ref safe_home) = safe_home_for_openclaw() {
+            return Ok(std::path::PathBuf::from(safe_home).join(".openclaw"));
+        }
+    }
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    Ok(home.join(".openclaw"))
 }
 
 // ─── Windows: 构建包含 openclaw 的增强 PATH ────────────────────────────────
@@ -1292,17 +1350,17 @@ async fn run_install_steps(
             match safe_home_for_openclaw() {
                 Some(ref safe) => {
                     emit_log(app, &format!("⚠ 检测到中文用户路径：{}", home_str));
-                    emit_log(app, &format!("  已自动映射到短路径：{}", safe));
+                    emit_log(app, &format!("  已自动映射到安全路径：{}", safe));
                     emit_log(
                         app,
-                        "  后续 Node.js 进程将使用短路径，避免 fs.rename 异常。",
+                        &format!("  .openclaw 配置目录：{}\\.openclaw", safe),
                     );
                 }
                 None => {
                     emit_log(
                         app,
                         &format!(
-                            "⚠ 检测到中文用户路径：{}，且无法获取 8.3 短路径。",
+                            "⚠ 检测到中文用户路径：{}，自动修正失败。",
                             home_str
                         ),
                     );
@@ -1634,10 +1692,8 @@ pub struct OpenclawInstallStatus {
 
 #[tauri::command]
 pub fn check_openclaw_installed(app: AppHandle) -> OpenclawInstallStatus {
-    let onboarded = app
-        .path()
-        .home_dir()
-        .map(|h| h.join(".openclaw").join("openclaw.json").exists())
+    let onboarded = openclaw_dir(&app)
+        .map(|d| d.join("openclaw.json").exists())
         .unwrap_or(false);
 
     let flag_path = app
@@ -1686,7 +1742,7 @@ pub struct EnvironmentInfo {
     pub strategy: String,
     /// Windows: 用户主目录包含非 ASCII 字符（中文用户名），可能导致 Node.js 文件操作异常
     pub unicode_home_warning: bool,
-    /// Windows: 已解析的 ASCII 安全短路径（8.3 格式），None 表示无法自动修正
+    /// Windows: 已解析的 ASCII 安全路径（C:\Users 或 8.3 格式），None 表示无法自动修正
     pub safe_home: Option<String>,
 }
 

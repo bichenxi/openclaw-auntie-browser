@@ -9,15 +9,14 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 // ── Path resolution ───────────────────────────────────────────────────────────
 
-/// Returns  <home>/.openclaw/<workspace>/skills  cross-platform.
+/// Returns  <openclaw_dir>/<workspace>/skills  cross-platform.
 fn skills_dir_for(app: &AppHandle, workspace: &str) -> Result<PathBuf, String> {
     validate_workspace(workspace)?;
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    Ok(home.join(".openclaw").join(workspace).join("skills"))
+    Ok(crate::installer::openclaw_dir(app)?.join(workspace).join("skills"))
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -89,8 +88,7 @@ pub fn install_builtin_skill(app: AppHandle, workspace: String) -> Result<(), St
 // ── openclaw.json skill registration ─────────────────────────────────────────
 
 fn openclaw_config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    Ok(home.join(".openclaw").join("openclaw.json"))
+    Ok(crate::installer::openclaw_dir(app)?.join("openclaw.json"))
 }
 
 fn read_openclaw_config(path: &PathBuf) -> Result<serde_json::Value, String> {
@@ -310,8 +308,7 @@ pub fn sync_skills_to_config(app: AppHandle) -> Result<SyncResult, String> {
 /// `workspace` or `workspace-<name>` naming convention.
 #[tauri::command]
 pub fn list_workspaces(app: AppHandle) -> Result<Vec<String>, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    let openclaw_dir = home.join(".openclaw");
+    let openclaw_dir = crate::installer::openclaw_dir(&app)?;
     if !openclaw_dir.exists() {
         return Ok(vec!["workspace".to_string()]);
     }
@@ -462,8 +459,7 @@ pub fn delete_skill_file(app: AppHandle, workspace: String, skill_name: String, 
 /// Returns the token string, or an error if the file/field is missing.
 #[tauri::command]
 pub fn get_openclaw_gateway_token(app: AppHandle) -> Result<String, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    let config_path = home.join(".openclaw").join("openclaw.json");
+    let config_path = crate::installer::openclaw_dir(&app)?.join("openclaw.json");
     if !config_path.exists() {
         return Err("未找到 ~/.openclaw/openclaw.json，请先启动 OpenClaw 完成初始化".to_string());
     }

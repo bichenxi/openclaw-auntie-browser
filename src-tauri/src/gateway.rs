@@ -4,13 +4,12 @@
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const REQUIRED_ORIGINS: &[&str] = &["http://localhost:*", "http://127.0.0.1:*"];
 
 fn openclaw_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let home = app.path().home_dir().map_err(|e| e.to_string())?;
-    Ok(home.join(".openclaw").join("openclaw.json"))
+    Ok(crate::installer::openclaw_dir(app)?.join("openclaw.json"))
 }
 
 /// 检查 gateway 配置是否满足要求。
