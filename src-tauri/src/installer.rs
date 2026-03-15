@@ -234,7 +234,11 @@ fn get_short_path_name(long_path: &str) -> Option<String> {
         .filter(|o| o.status.success())
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() || !s.is_ascii() { None } else { Some(s) }
+            if s.is_empty() || !s.is_ascii() {
+                None
+            } else {
+                Some(s)
+            }
         })
 }
 
@@ -242,11 +246,105 @@ fn get_short_path_name(long_path: &str) -> Option<String> {
 /// 结果被缓存，仅首次调用执行 PowerShell 检测。
 #[cfg(target_os = "windows")]
 pub(crate) fn safe_home_for_openclaw() -> Option<String> {
-    SAFE_HOME_CACHE.get_or_init(|| {
-        let home = std::env::var("USERPROFILE").ok()?;
-        if !path_has_non_ascii(&home) { return None; }
-        get_short_path_name(&home)
-    }).clone()
+    SAFE_HOME_CACHE
+        .get_or_init(|| {
+            let home = std::env::var("USERPROFILE").ok()?;
+            if !path_has_non_ascii(&home) {
+                return None;
+            }
+            get_short_path_name(&home)
+        })
+        .clone()
+}
+
+// ─── Windows: 构建包含 openclaw 的增强 PATH ────────────────────────────────
+
+/// 构建包含 fnm / npm / nvm / git 等所有必要目录的增强 PATH。
+/// 供 gateway restart、onboard 等需要调用 `openclaw` 命令的场景使用。
+#[cfg(target_os = "windows")]
+pub fn build_openclaw_env_path(app: &tauri::AppHandle) -> String {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut extra: Vec<String> = Vec::new();
+
+    let appdata = std::env::var("APPDATA").unwrap_or_default();
+    let localappdata = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let userprofile = std::env::var("USERPROFILE").unwrap_or_default();
+
+    // npm 全局目录
+    if !appdata.is_empty() {
+        extra.push(format!("{}\\npm", appdata));
+    }
+
+    // 系统 fnm node 目录（%APPDATA%\fnm\node-versions\v*\installation）
+    if !appdata.is_empty() {
+        let fnm_versions = std::path::PathBuf::from(&appdata)
+            .join("fnm")
+            .join("node-versions");
+        if let Ok(rd) = std::fs::read_dir(&fnm_versions) {
+            for e in rd.flatten() {
+                let install_dir = e.path().join("installation");
+                if install_dir.exists() {
+                    extra.push(install_dir.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // 系统 nvm-windows 目录
+    if !appdata.is_empty() {
+        let nvm_dir = std::path::PathBuf::from(&appdata).join("nvm");
+        if let Ok(rd) = std::fs::read_dir(&nvm_dir) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.starts_with('v') && e.path().join("node.exe").exists() {
+                    extra.push(e.path().to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // 常见 Node.js 安装路径
+    if let Ok(pf) = std::env::var("PROGRAMFILES") {
+        extra.push(format!("{}\\nodejs", pf));
+    }
+    if !localappdata.is_empty() {
+        extra.push(format!("{}\\Programs\\nodejs", localappdata));
+    }
+    if !userprofile.is_empty() {
+        extra.push(format!("{}\\scoop\\shims", userprofile));
+    }
+
+    // 内置 fnm（Oclaw 应用数据目录）
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let bundled = app_data.join("fnm").join("node-versions");
+        if let Ok(rd) = std::fs::read_dir(&bundled) {
+            for e in rd.flatten() {
+                let install_dir = e.path().join("installation");
+                if install_dir.exists() {
+                    extra.push(install_dir.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // Git 目录
+    if let Some(git_dir) = DISCOVERED_GIT_DIR.get() {
+        extra.push(git_dir.clone());
+    } else if let Some(git_dir) = find_git_cmd_dir() {
+        extra.push(git_dir);
+    }
+
+    let extra_str = extra
+        .into_iter()
+        .filter(|d| !current.contains(d.as_str()))
+        .collect::<Vec<_>>()
+        .join(";");
+
+    if extra_str.is_empty() {
+        current
+    } else {
+        format!("{};{}", extra_str, current)
+    }
 }
 
 // ─── Windows 工具路径补全 ────────────────────────────────────────────────────
@@ -596,7 +694,10 @@ fn ensure_git_available(app: &AppHandle) -> bool {
     }
 
     // 策略 2: winget（MinGit 下载失败时降级，可能弹 UAC）
-    emit_log(app, "MinGit 下载失败，尝试通过 winget 安装 Git for Windows...");
+    emit_log(
+        app,
+        "MinGit 下载失败，尝试通过 winget 安装 Git for Windows...",
+    );
     let winget_ok = std::process::Command::new("winget")
         .args([
             "install",
@@ -630,7 +731,10 @@ fn ensure_git_available(app: &AppHandle) -> bool {
             return true;
         }
     } else {
-        emit_log(app, "winget 安装也失败（可能系统无 winget 或需要管理员权限）。");
+        emit_log(
+            app,
+            "winget 安装也失败（可能系统无 winget 或需要管理员权限）。",
+        );
     }
 
     // 策略 3: 手动安装指引
@@ -651,15 +755,9 @@ fn ensure_git_available(app: &AppHandle) -> bool {
 #[cfg(target_os = "windows")]
 fn inject_git_https_override(cmd: &mut tokio::process::Command) {
     cmd.env("GIT_CONFIG_COUNT", "2")
-        .env(
-            "GIT_CONFIG_KEY_0",
-            "url.https://github.com/.insteadOf",
-        )
+        .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
         .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
-        .env(
-            "GIT_CONFIG_KEY_1",
-            "url.https://github.com/.insteadOf",
-        )
+        .env("GIT_CONFIG_KEY_1", "url.https://github.com/.insteadOf")
         .env("GIT_CONFIG_VALUE_1", "git@github.com:");
 }
 
@@ -1195,11 +1293,23 @@ async fn run_install_steps(
                 Some(ref safe) => {
                     emit_log(app, &format!("⚠ 检测到中文用户路径：{}", home_str));
                     emit_log(app, &format!("  已自动映射到短路径：{}", safe));
-                    emit_log(app, "  后续 Node.js 进程将使用短路径，避免 fs.rename 异常。");
+                    emit_log(
+                        app,
+                        "  后续 Node.js 进程将使用短路径，避免 fs.rename 异常。",
+                    );
                 }
                 None => {
-                    emit_log(app, &format!("⚠ 检测到中文用户路径：{}，且无法获取 8.3 短路径。", home_str));
-                    emit_log(app, "  如果安装后遇到 gateway 异常，建议使用纯英文用户名账户。");
+                    emit_log(
+                        app,
+                        &format!(
+                            "⚠ 检测到中文用户路径：{}，且无法获取 8.3 短路径。",
+                            home_str
+                        ),
+                    );
+                    emit_log(
+                        app,
+                        "  如果安装后遇到 gateway 异常，建议使用纯英文用户名账户。",
+                    );
                 }
             }
             emit_log(app, "");
@@ -1582,22 +1692,41 @@ pub struct EnvironmentInfo {
 
 fn detect_system_npm_version() -> Option<String> {
     let out = run_in_shell("npm --version").ok()?;
-    if !out.status.success() { return None; }
+    if !out.status.success() {
+        return None;
+    }
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 fn detect_system_git_version() -> Option<String> {
     let out = run_in_shell("git --version").ok()?;
-    if !out.status.success() { return None; }
+    if !out.status.success() {
+        return None;
+    }
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    let ver = s.strip_prefix("git version ").unwrap_or(&s).trim().to_string();
-    if ver.is_empty() { None } else { Some(ver) }
+    let ver = s
+        .strip_prefix("git version ")
+        .unwrap_or(&s)
+        .trim()
+        .to_string();
+    if ver.is_empty() {
+        None
+    } else {
+        Some(ver)
+    }
 }
 
 #[tauri::command]
 pub fn detect_environment(app: AppHandle) -> EnvironmentInfo {
-    let home_dir = app.path().home_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let home_dir = app
+        .path()
+        .home_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
 
     let node_version = run_in_shell("node --version")
         .ok()
@@ -1613,11 +1742,20 @@ pub fn detect_environment(app: AppHandle) -> EnvironmentInfo {
     if git_version.is_none() {
         if let Some(dir) = find_git_cmd_dir() {
             let git_exe = format!(r"{}\git.exe", dir);
-            if let Ok(o) = std::process::Command::new(&git_exe).arg("--version").output() {
+            if let Ok(o) = std::process::Command::new(&git_exe)
+                .arg("--version")
+                .output()
+            {
                 if o.status.success() {
                     let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                    let ver = s.strip_prefix("git version ").unwrap_or(&s).trim().to_string();
-                    if !ver.is_empty() { git_version = Some(ver); }
+                    let ver = s
+                        .strip_prefix("git version ")
+                        .unwrap_or(&s)
+                        .trim()
+                        .to_string();
+                    if !ver.is_empty() {
+                        git_version = Some(ver);
+                    }
                 }
             }
         }
@@ -1625,14 +1763,18 @@ pub fn detect_environment(app: AppHandle) -> EnvironmentInfo {
 
     let has_nvm = {
         #[cfg(not(target_os = "windows"))]
-        { home_dir.join(".nvm").join("nvm.sh").exists() }
+        {
+            home_dir.join(".nvm").join("nvm.sh").exists()
+        }
         #[cfg(target_os = "windows")]
         {
             let nvm_exe = std::env::var("APPDATA")
                 .map(|a| std::path::PathBuf::from(a).join("nvm").join("nvm.exe"))
                 .unwrap_or_default();
             nvm_exe.exists()
-                || run_in_shell("nvm version").map(|o| o.status.success()).unwrap_or(false)
+                || run_in_shell("nvm version")
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
         }
     };
 
@@ -1659,13 +1801,20 @@ pub fn detect_environment(app: AppHandle) -> EnvironmentInfo {
             }
         }
         #[cfg(not(target_os = "windows"))]
-        { (false, None) }
+        {
+            (false, None)
+        }
     };
 
     EnvironmentInfo {
-        node_version, npm_version, git_version,
-        has_nvm, has_fnm, strategy,
-        unicode_home_warning, safe_home,
+        node_version,
+        npm_version,
+        git_version,
+        has_nvm,
+        has_fnm,
+        strategy,
+        unicode_home_warning,
+        safe_home,
     }
 }
 

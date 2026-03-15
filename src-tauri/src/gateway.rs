@@ -177,7 +177,8 @@ pub fn check_and_fix_gateway_config(app: AppHandle) -> GatewayConfigStatus {
 /// 尝试执行 `openclaw gateway restart`。
 /// 成功返回 Ok(())，失败返回命令输出/错误信息。
 #[tauri::command]
-pub fn restart_openclaw_gateway() -> Result<(), String> {
+pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
+    let _ = &app;
     #[cfg(not(target_os = "windows"))]
     {
         // Tauri app 从 launchd 启动时 PATH 极短，不含 npm global bin。
@@ -230,6 +231,7 @@ pub fn restart_openclaw_gateway() -> Result<(), String> {
     {
         let mut cmd = std::process::Command::new("cmd");
         cmd.args(["/C", "openclaw gateway restart"]);
+        cmd.env("PATH", crate::installer::build_openclaw_env_path(&app));
         if let Some(ref safe_home) = crate::installer::safe_home_for_openclaw() {
             cmd.env("HOME", safe_home);
         }

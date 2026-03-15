@@ -96,6 +96,7 @@ pub async fn run_onboard(app: AppHandle, params: OnboardParams) -> Result<(), St
         b.args(["/C", &cmd_str])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        b.env("PATH", crate::installer::build_openclaw_env_path(&app));
         if let Some(ref safe_home) = crate::installer::safe_home_for_openclaw() {
             b.env("HOME", safe_home);
         }
