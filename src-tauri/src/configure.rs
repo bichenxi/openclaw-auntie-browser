@@ -163,18 +163,21 @@ pub struct WizardPrompt {
 fn parse_screen_for_prompt(screen_text: &str, cursor_row: u16) -> Option<WizardPrompt> {
     let lines: Vec<&str> = screen_text.lines().collect();
 
-    // 检查是否已结束（outro）
-    if lines.iter().any(|l| {
-        let t = l.trim();
-        t.starts_with('└')
-    }) {
-        let outro_text = lines.iter()
-            .filter(|l| l.trim().starts_with('└'))
-            .map(|l| l.trim().trim_start_matches('└').trim().to_string())
-            .collect::<Vec<_>>()
-            .join(" ");
+    // 检查是否已结束（outro）。
+    // 需同时满足：存在 └、无活跃 ◆、无 select/multiselect 选项标记（○●◻◼）。
+    // 避免 ◆ 被滚出屏幕时将正在进行的 select 步骤误判为完成。
+    if lines.iter().any(|l| l.trim().starts_with('└')) {
         let has_active = lines.iter().any(|l| l.trim().starts_with('◆'));
-        if !has_active {
+        let has_option_markers = lines.iter().any(|l| {
+            let t = l.trim();
+            t.contains('○') || t.contains('●') || t.contains('◻') || t.contains('◼') || t.contains('☐') || t.contains('☑')
+        });
+        if !has_active && !has_option_markers {
+            let outro_text: String = lines.iter()
+                .filter(|l| l.trim().starts_with('└'))
+                .map(|l| l.trim().trim_start_matches('└').trim().to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
             return Some(WizardPrompt {
                 prompt_type: "done".to_string(),
                 question: if outro_text.is_empty() { "完成".to_string() } else { outro_text },
@@ -187,19 +190,23 @@ fn parse_screen_for_prompt(screen_text: &str, cursor_row: u16) -> Option<WizardP
     }
 
     // 找最后一个活跃 prompt（◆）
-    let prompt_idx = lines.iter().rposition(|l| l.trim().starts_with('◆'))?;
-    let question = lines[prompt_idx]
-        .trim()
-        .trim_start_matches('◆')
-        .trim()
-        .to_string();
+    // 如果 ◆ 被滚出屏幕（常见于选项很多的 select），从第一行开始收集 │ 行
+    let prompt_idx = lines.iter().rposition(|l| l.trim().starts_with('◆'));
+    let question = match prompt_idx {
+        Some(idx) => lines[idx].trim().trim_start_matches('◆').trim().to_string(),
+        None => String::new(),
+    };
+    let scan_start = match prompt_idx {
+        Some(idx) => idx + 1,
+        None => 0,
+    };
 
     // 收集 prompt 后面的 │ 行，同时记录每行在 screen 中的原始行号
     // (screen_row, content_text)
     let mut body_entries: Vec<(usize, String)> = Vec::new();
     let mut error_msg: Option<String> = None;
 
-    for i in (prompt_idx + 1)..lines.len() {
+    for i in scan_start..lines.len() {
         let t = lines[i].trim();
         if t.starts_with('│') {
             let content = t.trim_start_matches('│').trim();
@@ -618,7 +625,7 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
         let _ = app.emit("wizard:raw-data", "[wizard] ConPTY 启动中…".to_string());
 
         let mut opts = conpty::ProcessOptions::default();
-        opts.set_console_size(Some((80, 25)));
+        opts.set_console_size(Some((120, 30)));
         let mut proc = opts.spawn(cmd)
             .map_err(|e| {
                 eprintln!("[wizard] conpty spawn 失败：{}", e);
@@ -705,7 +712,7 @@ pub fn start_onboard_wizard(app: AppHandle) -> Result<(), String> {
     });
 
     std::thread::spawn(move || {
-        let mut parser = vt100::Parser::new(25, 80, 0);
+        let mut parser = vt100::Parser::new(30, 120, 0);
         let mut last_prompt: Option<String> = None;
         let debounce = std::time::Duration::from_millis(150);
 

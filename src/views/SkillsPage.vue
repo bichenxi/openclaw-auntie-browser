@@ -10,8 +10,6 @@ import {
   checkBuiltinSkillInstalled,
   installBuiltinSkill,
   syncSkillsToConfig,
-  getSkillTriggers,
-  setSkillTriggers,
   type SkillMeta,
   type SyncResult,
 } from '@/api/skills'
@@ -46,10 +44,6 @@ const creating = ref(false)
 
 const showNewFile = ref(false)
 const newFileName = ref('')
-
-// Triggers
-const triggers = ref<string[]>([])
-const triggerInput = ref('')
 
 // Built-in skill
 const builtinInstalled = ref(false)
@@ -126,11 +120,6 @@ async function doInstallBuiltin() {
 async function selectSkill(skill: SkillMeta) {
   selectedSkill.value = skill
   selectedFile.value = skill.files.includes('SKILL.md') ? 'SKILL.md' : (skill.files[0] ?? '')
-  triggers.value = []
-  triggerInput.value = ''
-  try {
-    triggers.value = await getSkillTriggers(skill.name)
-  } catch (_) { /* skill may not be registered yet */ }
   await loadFile()
 }
 
@@ -147,29 +136,6 @@ async function loadFile() {
   } catch (e) {
     error.value = String(e)
     fileContent.value = ''
-  }
-}
-
-// ── Triggers ─────────────────────────────────────────────────────────────────
-function addTrigger() {
-  const val = triggerInput.value.trim()
-  if (val && !triggers.value.includes(val)) {
-    triggers.value.push(val)
-  }
-  triggerInput.value = ''
-}
-
-function removeTrigger(index: number) {
-  triggers.value.splice(index, 1)
-}
-
-function handleTriggerKeydown(e: KeyboardEvent) {
-  if (e.key === 'Enter' || e.key === ',') {
-    e.preventDefault()
-    addTrigger()
-  }
-  if (e.key === 'Backspace' && !triggerInput.value && triggers.value.length > 0) {
-    triggers.value.pop()
   }
 }
 
@@ -195,7 +161,6 @@ async function saveAndSync() {
   error.value = ''
   try {
     await writeSkillFile(currentWorkspace.value, selectedSkill.value.name, selectedFile.value, fileContent.value)
-    await setSkillTriggers(selectedSkill.value.name, triggers.value)
     lastSyncResult.value = await syncSkillsToConfig()
     bumpSessionKey()
     saved.value = true
@@ -620,35 +585,6 @@ onMounted(load)
             class="shrink-0 px-4 py-1.5 text-[11px] text-[#a89ec4] bg-[#faf8ff] border-b border-[#f0ecfa] truncate"
           >
             <span class="text-[#c4bdd8] mr-1">描述</span>{{ selectedSkill.description }}
-          </div>
-
-          <!-- Triggers bar -->
-          <div class="shrink-0 flex items-center gap-2 px-4 py-2 bg-[#faf8ff] border-b border-[#f0ecfa]">
-            <span class="shrink-0 text-[11px] font-semibold text-[#b8b0cc] uppercase tracking-[0.5px]">触发词</span>
-            <div class="flex-1 flex items-center flex-wrap gap-1.5 min-h-[28px] px-2.5 py-1 bg-white border border-[#e8e2f4] rounded-[7px] cursor-text transition focus-within:border-secondary focus-within:shadow-[0_0_0_2px_rgba(95,71,206,0.08)]">
-              <span
-                v-for="(tag, idx) in triggers"
-                :key="idx"
-                class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-secondary bg-secondary/8 border border-secondary/15 rounded-[5px] select-none"
-              >
-                {{ tag }}
-                <button
-                  type="button"
-                  class="w-3.5 h-3.5 flex items-center justify-center rounded-full text-secondary/50 hover:text-white hover:bg-secondary/60 transition cursor-pointer"
-                  @click="removeTrigger(idx)"
-                >
-                  <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                </button>
-              </span>
-              <input
-                v-model="triggerInput"
-                type="text"
-                class="flex-1 min-w-[80px] py-0.5 text-[12px] bg-transparent outline-none border-none placeholder-[#c4bdd8]"
-                placeholder="输入触发词后回车…"
-                @keydown="handleTriggerKeydown"
-                @blur="addTrigger"
-              />
-            </div>
           </div>
 
           <!-- Editor -->

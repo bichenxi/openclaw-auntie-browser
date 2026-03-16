@@ -173,15 +173,16 @@ pub fn check_and_fix_gateway_config(app: AppHandle) -> GatewayConfigStatus {
     GatewayConfigStatus { already_ok: false, fixed: true, needs_restart: true, error: None }
 }
 
-/// 尝试执行 `openclaw gateway restart`。
-/// 成功返回 Ok(())，失败返回命令输出/错误信息。
-#[tauri::command]
-pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
-    let _ = &app;
+/// 执行 openclaw gateway 子命令的通用实现。
+fn run_openclaw_gateway_cmd(#[allow(unused)] app: &AppHandle, subcmd: &str) -> Result<(), String> {
+    let full_cmd = if subcmd.is_empty() {
+        "openclaw gateway".to_string()
+    } else {
+        format!("openclaw gateway {}", subcmd)
+    };
+
     #[cfg(not(target_os = "windows"))]
     {
-        // Tauri app 从 launchd 启动时 PATH 极短，不含 npm global bin。
-        // 依次尝试：$SHELL -l -c → /bin/zsh -l -c → /bin/bash -l -c → /bin/sh -c（兜底）。
         let mut candidates: Vec<(std::path::PathBuf, bool)> = Vec::new();
         if let Ok(s) = std::env::var("SHELL") {
             let p = std::path::PathBuf::from(&s);
@@ -201,9 +202,9 @@ pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
         for (shell, login) in &candidates {
             let mut cmd = std::process::Command::new(shell);
             if *login {
-                cmd.args(["-l", "-c", "openclaw gateway restart"]);
+                cmd.args(["-l", "-c", &full_cmd]);
             } else {
-                cmd.args(["-c", "openclaw gateway restart"]);
+                cmd.args(["-c", &full_cmd]);
             }
             match cmd.output() {
                 Ok(o) if o.status.success() => return Ok(()),
@@ -211,7 +212,6 @@ pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
                     let stderr = String::from_utf8_lossy(&o.stderr).to_string();
                     let stdout = String::from_utf8_lossy(&o.stdout).to_string();
                     let msg = if !stderr.is_empty() { stderr } else { stdout };
-                    // command not found → 继续尝试下一个 shell
                     if msg.contains("command not found") || msg.contains("not found") {
                         last_err = msg;
                         continue;
@@ -229,8 +229,8 @@ pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", "openclaw gateway restart"]);
-        cmd.env("PATH", crate::installer::build_openclaw_env_path(&app));
+        cmd.args(["/C", &full_cmd]);
+        cmd.env("PATH", crate::installer::build_openclaw_env_path(app));
         if let Some(ref safe_home) = crate::installer::safe_home_for_openclaw() {
             cmd.env("HOME", safe_home);
         }
@@ -247,4 +247,16 @@ pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
             Err(e) => Err(format!("无法执行命令：{}", e)),
         }
     }
+}
+
+/// 首次启动 gateway（openclaw onboard 完成后使用）。
+#[tauri::command]
+pub fn start_openclaw_gateway(app: AppHandle) -> Result<(), String> {
+    run_openclaw_gateway_cmd(&app, "")
+}
+
+/// 重启已在运行的 gateway。
+#[tauri::command]
+pub fn restart_openclaw_gateway(app: AppHandle) -> Result<(), String> {
+    run_openclaw_gateway_cmd(&app, "restart")
 }

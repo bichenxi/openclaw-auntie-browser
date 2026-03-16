@@ -4,7 +4,7 @@ import { useTabsStore } from '@/stores/tabs'
 import { useOnboardStore } from '@/stores/onboard'
 import { startInstall, cancelInstall } from '@/api/installer'
 import { checkOpenclawAlive } from '@/api/openclaw'
-import { restartOpenclawGateway } from '@/api/gateway'
+import { startOpenclawGateway } from '@/api/gateway'
 import { useAutoSetup } from '@/composables/useAutoSetup'
 
 const installerStore = useInstallerStore()
@@ -89,7 +89,7 @@ async function launchAndSetup() {
   launchStep.value = 'starting'
   launchError.value = ''
   try {
-    await restartOpenclawGateway().catch(() => {})
+    await startOpenclawGateway().catch(() => {})
     // 轮询直到 gateway 上线，最多等 30 秒
     await new Promise<void>((resolve, reject) => {
       let count = 0

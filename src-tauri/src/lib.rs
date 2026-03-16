@@ -80,8 +80,6 @@ pub fn run() {
             skills::install_builtin_skill,
             skills::get_openclaw_gateway_token,
             skills::sync_skills_to_config,
-            skills::get_skill_triggers,
-            skills::set_skill_triggers,
             installer::start_install,
             installer::cancel_install,
             installer::check_openclaw_installed,
@@ -100,6 +98,7 @@ pub fn run() {
             configure::is_elevated,
             configure::restart_elevated,
             gateway::check_and_fix_gateway_config,
+            gateway::start_openclaw_gateway,
             gateway::restart_openclaw_gateway,
         ])
         .run(tauri::generate_context!())

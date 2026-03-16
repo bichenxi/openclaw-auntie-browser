@@ -171,64 +171,6 @@ fn unregister_skill_from_config(app: &AppHandle, skill_name: &str) -> Result<(),
     write_openclaw_config(&config_path, &json)
 }
 
-/// Reads the `triggers` array for a skill from openclaw.json.
-#[tauri::command]
-pub fn get_skill_triggers(app: AppHandle, skill_name: String) -> Result<Vec<String>, String> {
-    let config_path = openclaw_config_path(&app)?;
-    if !config_path.exists() {
-        return Ok(vec![]);
-    }
-    let json = read_openclaw_config(&config_path)?;
-    let triggers = json
-        .get("skills")
-        .and_then(|s| s.get("entries"))
-        .and_then(|e| e.get(&skill_name))
-        .and_then(|entry| entry.get("triggers"))
-        .and_then(|t| t.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-    Ok(triggers)
-}
-
-/// Writes the `triggers` array for a skill in openclaw.json.
-/// Also ensures the skill entry exists and is enabled.
-#[tauri::command]
-pub fn set_skill_triggers(
-    app: AppHandle,
-    skill_name: String,
-    triggers: Vec<String>,
-) -> Result<(), String> {
-    let config_path = openclaw_config_path(&app)?;
-    if !config_path.exists() {
-        return Err("~/.openclaw/openclaw.json 不存在".to_string());
-    }
-    let mut json = read_openclaw_config(&config_path)?;
-    let entries = ensure_skill_entries(&mut json);
-
-    let entry = entries
-        .entry(skill_name)
-        .or_insert_with(|| serde_json::json!({ "enabled": true }));
-
-    if let Some(obj) = entry.as_object_mut() {
-        let trigger_values: Vec<serde_json::Value> = triggers
-            .into_iter()
-            .filter(|t| !t.trim().is_empty())
-            .map(|t| serde_json::Value::String(t))
-            .collect();
-        if trigger_values.is_empty() {
-            obj.remove("triggers");
-        } else {
-            obj.insert("triggers".to_string(), serde_json::Value::Array(trigger_values));
-        }
-    }
-
-    write_openclaw_config(&config_path, &json)
-}
-
 /// Scans all workspaces, collects every skill directory name, then syncs
 /// `skills.entries` in openclaw.json so that every on-disk skill is registered
 /// and stale entries for removed skills are cleaned up.
@@ -280,6 +222,13 @@ pub fn sync_skills_to_config(app: AppHandle) -> Result<SyncResult, String> {
     for key in &stale {
         entries.remove(key);
         removed.push(key.clone());
+    }
+
+    // Strip legacy `triggers` from all skill entries (OpenClaw 2026.3.13+ uses interaction/capability)
+    for (_, entry) in entries.iter_mut() {
+        if let Some(obj) = entry.as_object_mut() {
+            obj.remove("triggers");
+        }
     }
 
     // Ensure exec is in tools.alsoAllow

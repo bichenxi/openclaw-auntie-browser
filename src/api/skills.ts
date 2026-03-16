@@ -55,11 +55,3 @@ export interface SyncResult {
 export function syncSkillsToConfig(): Promise<SyncResult> {
   return invoke('sync_skills_to_config')
 }
-
-export function getSkillTriggers(skillName: string): Promise<string[]> {
-  return invoke('get_skill_triggers', { skillName })
-}
-
-export function setSkillTriggers(skillName: string, triggers: string[]): Promise<void> {
-  return invoke('set_skill_triggers', { skillName, triggers })
-}
