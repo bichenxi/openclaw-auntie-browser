@@ -432,20 +432,20 @@ pub(crate) fn safe_home_for_openclaw() -> Option<String> {
 // fs.rename 在这些路径上可能失败。
 //
 // 解决方案：将 fnm 数据目录和 npm 全局安装目录统一重定向到纯 ASCII 路径。
-// 复用 safe_home_for_openclaw() 的结果，在其下创建 claw-browser 子目录。
+// 复用 safe_home_for_openclaw() 的结果，在其下创建 oclaw 子目录。
 
 /// 缓存安全的应用数据根目录。
 #[cfg(target_os = "windows")]
 static SAFE_DATA_ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
-/// 返回纯 ASCII 的应用数据根目录（如 `D:\claw-browser` 或 `C:\claw-browser`）。
+/// 返回纯 ASCII 的应用数据根目录（如 `D:\oclaw` 或 `C:\oclaw`）。
 /// 用户名纯 ASCII 时返回 None（无需重定向）。
 #[cfg(target_os = "windows")]
 pub(crate) fn safe_data_root() -> Option<String> {
     SAFE_DATA_ROOT_CACHE
         .get_or_init(|| {
             let safe_home = safe_home_for_openclaw()?;
-            let root = std::path::PathBuf::from(&safe_home).join("claw-browser");
+            let root = std::path::PathBuf::from(&safe_home).join("oclaw");
             std::fs::create_dir_all(&root).ok()?;
             Some(root.to_string_lossy().to_string())
         })
@@ -466,7 +466,7 @@ pub(crate) fn safe_fnm_dir(app: &AppHandle) -> String {
         .unwrap_or_else(|_| {
             let home = std::env::var("USERPROFILE")
                 .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
-            format!("{}\\AppData\\Local\\claw-browser\\fnm", home)
+            format!("{}\\AppData\\Local\\oclaw\\fnm", home)
         })
 }
 
@@ -1910,7 +1910,7 @@ pub async fn start_install(app: AppHandle) -> Result<(), String> {
                 .unwrap_or_else(|_| {
                     let home = std::env::var("HOME")
                         .unwrap_or_else(|_| std::env::temp_dir().to_string_lossy().to_string());
-                    format!("{}/.local/share/claw-browser/fnm", home)
+                    format!("{}/.local/share/oclaw/fnm", home)
                 })
         }
     };
@@ -2285,7 +2285,7 @@ pub async fn full_uninstall(app: AppHandle) -> Result<UninstallResult, String> {
         }
     }
 
-    // Windows 安全路径下的 claw-browser 目录（含 fnm + npm-global）
+    // Windows 安全路径下的 oclaw 目录（含 fnm + npm-global）
     #[cfg(target_os = "windows")]
     {
         if let Some(ref root) = safe_data_root() {
@@ -2384,7 +2384,7 @@ fn clean_shell_profile(app: &AppHandle) -> bool {
                 .lines()
                 .filter(|line| {
                     !line.contains(marker)
-                        && !line.contains("claw-browser/fnm/node-versions")
+                        && !line.contains("oclaw/fnm/node-versions")
                 })
                 .collect();
             // 去除因删除行产生的多余空行（最多保留一个）
@@ -2416,13 +2416,13 @@ fn clean_shell_profile(app: &AppHandle) -> bool {
     }
 }
 
-/// Windows: 从用户 PATH 中移除包含 claw-browser 的目录。
+/// Windows: 从用户 PATH 中移除包含 oclaw 的目录。
 #[cfg(target_os = "windows")]
 fn clean_user_path_windows(app: &AppHandle) -> bool {
     let ps_script = r#"
 $p = [Environment]::GetEnvironmentVariable('PATH','User')
 if (-not $p) { exit 0 }
-$dirs = $p.Split(';') | Where-Object { $_ -notmatch 'claw-browser' }
+$dirs = $p.Split(';') | Where-Object { $_ -notmatch 'oclaw' }
 $newP = ($dirs -join ';')
 [Environment]::SetEnvironmentVariable('PATH',$newP,'User')
 "#;

@@ -1,5 +1,5 @@
 /**
- * claw-browser-control bridge
+ * oclaw-control bridge
  *
  * 这不是一个转发代理。Oclaw 的 HTTP API 已经内嵌在 Tauri 应用里，
  * 直接监听 127.0.0.1:18790，无需再开端口。
@@ -27,7 +27,7 @@ async function checkAlive(): Promise<boolean> {
 
 function log(msg: string) {
   const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-  console.log(`[${ts}] [claw-browser] ${msg}`)
+  console.log(`[${ts}] [oclaw] ${msg}`)
 }
 
 async function main() {

@@ -1,5 +1,5 @@
 ---
-name: claw-browser
+name: oclaw
 description: Oclaw 项目开发约定与 Tauri/Vue 架构规范。在为本仓库添加功能、调用 Tauri 命令、改路由或状态时使用；新增代码必须符合本技能中的前端与 Rust 规范。
 ---
 

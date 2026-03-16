@@ -62,19 +62,19 @@ fn parse_frontmatter(text: &str) -> (Option<String>, Option<String>) {
     (version, description)
 }
 
-// ── Built-in skill: claw-browser-control ─────────────────────────────────────
+// ── Built-in skill: oclaw-control ─────────────────────────────────────
 
-const BUILTIN_SKILL_NAME: &str = "claw-browser-control";
+const BUILTIN_SKILL_NAME: &str = "oclaw-control";
 const BUILTIN_SKILL_MD: &str = include_str!("../../openclaw-skill/SKILL.md");
 
-/// Returns true if the claw-browser-control skill is installed in the given workspace.
+/// Returns true if the oclaw-control skill is installed in the given workspace.
 #[tauri::command]
 pub fn check_builtin_skill_installed(app: AppHandle, workspace: String) -> Result<bool, String> {
     let path = skills_dir_for(&app, &workspace)?.join(BUILTIN_SKILL_NAME).join("SKILL.md");
     Ok(path.exists())
 }
 
-/// Installs (or re-installs) the bundled claw-browser-control skill into the given workspace,
+/// Installs (or re-installs) the bundled oclaw-control skill into the given workspace,
 /// and registers it in ~/.openclaw/openclaw.json.
 #[tauri::command]
 pub fn install_builtin_skill(app: AppHandle, workspace: String) -> Result<(), String> {

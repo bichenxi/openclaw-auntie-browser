@@ -151,12 +151,12 @@ jobs:
             sudo xattr -rd com.apple.quarantine
             ```
 
-            **3. 将 `claw-browser` 的应用图标直接拖入终端窗口**
+            **3. 将 `Oclaw` 的应用图标直接拖入终端窗口**
 
             终端会自动填入应用路径，最终命令看起来像这样：
 
             ```
-            sudo xattr -rd com.apple.quarantine /Applications/claw-browser.app
+            sudo xattr -rd com.apple.quarantine /Applications/Oclaw.app
             ```
 
             **4. 按下回车，输入 Mac 开机密码（输入时屏幕不显示字符），再按回车**

@@ -108,7 +108,7 @@ async function doInstallBuiltin() {
     await installBuiltinSkill(currentWorkspace.value)
     await load()
     // Auto-select the installed skill
-    const skill = skills.value.find(s => s.name === 'claw-browser-control')
+    const skill = skills.value.find(s => s.name === 'oclaw-control')
     if (skill) await selectSkill(skill)
   } catch (e) {
     error.value = String(e)
@@ -436,7 +436,7 @@ onMounted(load)
         <!-- Skill list — right-click for more actions -->
         <div class="skill-list flex-1 overflow-y-auto px-2 pb-2">
 
-          <!-- 内置技能：claw-browser-control -->
+          <!-- 内置技能：oclaw-control -->
           <div class="mb-2 mt-1.5">
             <div class="px-1 mb-1">
               <span class="text-[10px] font-semibold text-[#b8b0cc] uppercase tracking-[0.8px]">内置技能</span>
@@ -444,14 +444,14 @@ onMounted(load)
             <div
               class="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[8px] transition select-none"
               :class="builtinInstalled
-                ? (selectedSkill?.name === 'claw-browser-control' ? 'bg-secondary/8 cursor-pointer' : 'hover:bg-[#f5f2fc] cursor-pointer')
+                ? (selectedSkill?.name === 'oclaw-control' ? 'bg-secondary/8 cursor-pointer' : 'hover:bg-[#f5f2fc] cursor-pointer')
                 : 'bg-[rgba(245,158,11,0.05)] border border-[rgba(245,158,11,0.2)]'"
-              @click="builtinInstalled && selectSkill(skills.find(s => s.name === 'claw-browser-control')!)"
+              @click="builtinInstalled && selectSkill(skills.find(s => s.name === 'oclaw-control')!)"
             >
               <img src="/logo.png" class="w-6 h-6 rounded-[6px] object-cover shrink-0 shadow-sm" alt="logo" />
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-[12px] font-medium text-[#2d2b3d] truncate">claw-browser-control</span>
+                  <span class="text-[12px] font-medium text-[#2d2b3d] truncate">oclaw-control</span>
                   <span
                     class="shrink-0 px-1.5 py-px rounded-[4px] text-[9px] font-semibold tracking-[0.3px]"
                     :class="builtinInstalled
@@ -484,10 +484,10 @@ onMounted(load)
           </div>
 
           <div v-if="loading && skills.length === 0" class="py-6 text-center text-[12px] text-[#c4bdd8]">加载中…</div>
-          <div v-else-if="skills.filter(s => s.name !== 'claw-browser-control').length === 0" class="py-4 text-center text-[12px] text-[#c4bdd8]">暂无自定义技能</div>
+          <div v-else-if="skills.filter(s => s.name !== 'oclaw-control').length === 0" class="py-4 text-center text-[12px] text-[#c4bdd8]">暂无自定义技能</div>
 
           <div
-            v-for="skill in skills.filter(s => s.name !== 'claw-browser-control')"
+            v-for="skill in skills.filter(s => s.name !== 'oclaw-control')"
             :key="skill.name"
             class="flex items-start gap-2.5 px-2.5 py-2.5 mt-0.5 rounded-[8px] cursor-pointer select-none transition"
             :class="selectedSkill?.name === skill.name

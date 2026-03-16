@@ -1,9 +1,9 @@
 ---
-name: claw-browser-control
+name: oclaw-control
 version: 5.0
 description: 大虾专属浏览器控制技能。当用户说「大虾帮我」「大妈帮我」「大虾帮我」「张大虾」时激活，通过 curl 控制用户桌面 Oclaw 完成任意网页任务。
 metadata:
-  { "openclaw": { "skillKey": "claw-browser-control" } }
+  { "openclaw": { "skillKey": "oclaw-control" } }
 ---
 
 # 大虾 · Oclaw 专属控制技能

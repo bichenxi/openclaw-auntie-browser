@@ -526,31 +526,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw-browser"
-version = "1.4.2"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "conpty",
- "futures-util",
- "portable-pty",
- "pty-process",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-shell",
- "tokio",
- "tokio-tungstenite",
- "tower 0.4.13",
- "tower-http 0.5.2",
- "url",
- "vt100",
-]
-
-[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2589,6 +2564,31 @@ dependencies = [
  "objc2-foundation 0.3.1",
  "objc2-javascript-core",
  "objc2-security",
+]
+
+[[package]]
+name = "oclaw"
+version = "1.4.2"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "conpty",
+ "futures-util",
+ "portable-pty",
+ "pty-process",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tauri-plugin-shell",
+ "tokio",
+ "tokio-tungstenite",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+ "url",
+ "vt100",
 ]
 
 [[package]]

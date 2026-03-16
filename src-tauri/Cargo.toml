@@ -1,12 +1,12 @@
 [package]
-name = "claw-browser"
+name = "oclaw"
 version = "1.4.2"
 description = "Oclaw - Tauri backend (browser for OpenClaw)"
 authors = ["you"]
 edition = "2021"
 
 [lib]
-name = "claw_browser_lib"
+name = "oclaw_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
