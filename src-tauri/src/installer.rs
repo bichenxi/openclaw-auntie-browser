@@ -22,6 +22,15 @@ use tauri_plugin_shell::ShellExt;
 /// npmmirror Node.js 发行版镜像，解决大陆用户从 nodejs.org 下载失败的问题。
 const NODE_DIST_MIRROR: &str = "https://npmmirror.com/mirrors/node";
 
+/// npmmirror npm 包注册表镜像
+const NPM_REGISTRY_MIRROR: &str = "https://registry.npmmirror.com";
+
+/// GitHub HTTPS 镜像，用于加速 npm git 依赖的 clone
+const GITHUB_MIRROR: &str = "https://ghfast.top/https://github.com/";
+
+/// 常见本地代理端口（Clash / V2Ray / Shadowsocks 等）
+const LOCAL_PROXY_PORTS: &[u16] = &[7890, 7897, 7891, 1080, 8080, 10809];
+
 // ─── 状态 ──────────────────────────────────────────────────────────────────
 
 pub struct InstallerState {
@@ -147,7 +156,88 @@ fn run_in_shell_with_env(app: &AppHandle, cmd: &str) -> std::io::Result<std::pro
     if let Some(ref prefix) = safe_npm_prefix() {
         c.env("NPM_CONFIG_PREFIX", prefix);
     }
+    inject_proxy_env(&mut c);
     c.output()
+}
+
+// ─── 本地代理检测 ──────────────────────────────────────────────────────────
+//
+// 大陆用户从 github.com 拉取 git 依赖经常超时。安装器自动检测系统代理和常见
+// 本地代理端口（Clash 7890、V2Ray 10809 等），找到后注入 HTTP_PROXY/HTTPS_PROXY，
+// 让 git / npm 自动走代理。
+
+/// 缓存代理检测结果。
+static DETECTED_PROXY: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+/// 检测可用的代理地址。优先使用已有环境变量，其次探测本地常见端口。
+fn detect_proxy() -> Option<String> {
+    DETECTED_PROXY
+        .get_or_init(|| {
+            // 1. 已有环境变量
+            for key in &[
+                "HTTPS_PROXY",
+                "https_proxy",
+                "HTTP_PROXY",
+                "http_proxy",
+                "ALL_PROXY",
+                "all_proxy",
+            ] {
+                if let Ok(val) = std::env::var(key) {
+                    let v = val.trim().to_string();
+                    if !v.is_empty() {
+                        return Some(v);
+                    }
+                }
+            }
+
+            // 2. 探测本地常见代理端口
+            use std::net::{SocketAddr, TcpStream};
+            use std::time::Duration;
+            for port in LOCAL_PROXY_PORTS {
+                let addr = SocketAddr::from(([127, 0, 0, 1], *port));
+                if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+                    return Some(format!("http://127.0.0.1:{}", port));
+                }
+            }
+
+            None
+        })
+        .clone()
+}
+
+/// 将代理环境变量注入到 std::process::Command（同步版，Windows run_in_shell_with_env 使用）。
+#[allow(dead_code)]
+fn inject_proxy_env(cmd: &mut std::process::Command) {
+    if let Some(ref proxy) = detect_proxy() {
+        cmd.env("HTTP_PROXY", proxy)
+            .env("HTTPS_PROXY", proxy)
+            .env("http_proxy", proxy)
+            .env("https_proxy", proxy);
+    }
+}
+
+/// 将代理环境变量注入到 tokio::process::Command（异步版）。
+fn inject_proxy_env_async(cmd: &mut tokio::process::Command) {
+    if let Some(ref proxy) = detect_proxy() {
+        cmd.env("HTTP_PROXY", proxy)
+            .env("HTTPS_PROXY", proxy)
+            .env("http_proxy", proxy)
+            .env("https_proxy", proxy);
+    }
+}
+
+/// 将代理环境变量注入到 tauri_plugin_shell::process::Command（sidecar 版）。
+fn inject_proxy_env_sidecar(
+    cmd: tauri_plugin_shell::process::Command,
+) -> tauri_plugin_shell::process::Command {
+    match detect_proxy() {
+        Some(ref proxy) => cmd
+            .env("HTTP_PROXY", proxy)
+            .env("HTTPS_PROXY", proxy)
+            .env("http_proxy", proxy)
+            .env("https_proxy", proxy),
+        None => cmd,
+    }
 }
 
 /// 检测 node major 版本，返回 None 表示未安装或无法检测。
@@ -911,17 +1001,30 @@ fn ensure_git_available(app: &AppHandle) -> bool {
 
 // ─── 命令执行（流式输出）─────────────────────────────────────────────────────
 
-/// 通过 GIT_CONFIG_* 环境变量让 Git 将 GitHub SSH URL 自动改写为 HTTPS，
-/// 避免 npm 依赖中 `ssh://git@github.com/...` 地址触发 SSH 鉴权
-/// （用户通常没有配置 GitHub SSH 密钥；且 MinGit MSYS 层对中文路径下的
-/// `.ssh` 目录处理会乱码）。
-#[cfg(target_os = "windows")]
-fn inject_git_https_override(cmd: &mut tokio::process::Command) {
-    cmd.env("GIT_CONFIG_COUNT", "2")
-        .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
+/// 通过 GIT_CONFIG_* 环境变量：
+/// 1. 将 GitHub SSH URL 自动改写为 HTTPS（避免 SSH 鉴权问题）
+/// 2. 将 GitHub HTTPS URL 改写为镜像地址（解决大陆用户 github.com 超时）
+fn inject_git_mirror(cmd: &mut tokio::process::Command) {
+    cmd.env("GIT_CONFIG_COUNT", "3")
+        .env("GIT_CONFIG_KEY_0", format!("url.{}.insteadOf", GITHUB_MIRROR))
         .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
-        .env("GIT_CONFIG_KEY_1", "url.https://github.com/.insteadOf")
-        .env("GIT_CONFIG_VALUE_1", "git@github.com:");
+        .env("GIT_CONFIG_KEY_1", format!("url.{}.insteadOf", GITHUB_MIRROR))
+        .env("GIT_CONFIG_VALUE_1", "git@github.com:")
+        .env("GIT_CONFIG_KEY_2", format!("url.{}.insteadOf", GITHUB_MIRROR))
+        .env("GIT_CONFIG_VALUE_2", "https://github.com/");
+}
+
+/// sidecar 版本的 git 镜像注入
+fn inject_git_mirror_sidecar(
+    cmd: tauri_plugin_shell::process::Command,
+) -> tauri_plugin_shell::process::Command {
+    cmd.env("GIT_CONFIG_COUNT", "3")
+        .env("GIT_CONFIG_KEY_0", format!("url.{}.insteadOf", GITHUB_MIRROR))
+        .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
+        .env("GIT_CONFIG_KEY_1", format!("url.{}.insteadOf", GITHUB_MIRROR))
+        .env("GIT_CONFIG_VALUE_1", "git@github.com:")
+        .env("GIT_CONFIG_KEY_2", format!("url.{}.insteadOf", GITHUB_MIRROR))
+        .env("GIT_CONFIG_VALUE_2", "https://github.com/")
 }
 
 /// npm notice / npm warn EBADENGINE 等纯噪音行，不向前端显示。
@@ -943,11 +1046,13 @@ async fn run_login_shell_step(
     #[cfg(not(target_os = "windows"))]
     let mut child = {
         let shell = detect_login_shell();
-        Command::new(&shell)
-            .args(["-l", "-c", cmd_str])
+        let mut b = Command::new(&shell);
+        b.args(["-l", "-c", cmd_str])
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        inject_git_mirror(&mut b);
+        inject_proxy_env_async(&mut b);
+        b.spawn()
             .map_err(|e| format!("启动命令失败：{}", e))?
     };
 
@@ -966,7 +1071,8 @@ async fn run_login_shell_step(
         if let Some(ref prefix) = safe_npm_prefix() {
             b.env("NPM_CONFIG_PREFIX", prefix);
         }
-        inject_git_https_override(&mut b);
+        inject_git_mirror(&mut b);
+        inject_proxy_env_async(&mut b);
         b.spawn().map_err(|e| format!("启动命令失败：{}", e))?
     };
 
@@ -1015,6 +1121,8 @@ async fn run_step(
     cmd = cmd
         .args(["--fnm-dir", fnm_dir, "--node-dist-mirror", NODE_DIST_MIRROR])
         .args(args);
+    cmd = inject_proxy_env_sidecar(cmd);
+    cmd = inject_git_mirror_sidecar(cmd);
     #[cfg(target_os = "windows")]
     {
         if let Some(path) = augmented_path_with_git() {
@@ -1026,12 +1134,6 @@ async fn run_step(
         if let Some(ref prefix) = safe_npm_prefix() {
             cmd = cmd.env("NPM_CONFIG_PREFIX", prefix);
         }
-        cmd = cmd
-            .env("GIT_CONFIG_COUNT", "2")
-            .env("GIT_CONFIG_KEY_0", "url.https://github.com/.insteadOf")
-            .env("GIT_CONFIG_VALUE_0", "ssh://git@github.com/")
-            .env("GIT_CONFIG_KEY_1", "url.https://github.com/.insteadOf")
-            .env("GIT_CONFIG_VALUE_1", "git@github.com:");
     }
     let (mut rx, child) = cmd.spawn().map_err(|e| e.to_string())?;
 
@@ -1502,6 +1604,19 @@ async fn run_install_steps(
         }
     }
 
+    // ── 镜像 & 代理日志 ────────────────────────────────────────────────────
+    emit_log(app, &format!("npm 镜像源：{}", NPM_REGISTRY_MIRROR));
+    emit_log(app, &format!("GitHub 镜像：{}", GITHUB_MIRROR));
+    match detect_proxy() {
+        Some(ref proxy) => {
+            emit_log(app, &format!("本地代理：{}（自动注入）", proxy));
+        }
+        None => {
+            emit_log(app, "未检测到本地代理（如仍超时，可开启 Clash/V2Ray 后重试）。");
+        }
+    }
+    emit_log(app, "");
+
     // ── 检测结果日志 ──────────────────────────────────────────────────────────
     match &strategy {
         NodeStrategy::SystemNode(v) => emit_log(
@@ -1623,6 +1738,8 @@ async fn run_install_steps(
     #[cfg(not(target_os = "windows"))]
     let npm_bin = "npm";
 
+    let registry_flag = format!("--registry={}", NPM_REGISTRY_MIRROR);
+
     let install_result = if use_bundled_fnm {
         run_step(
             app,
@@ -1635,6 +1752,7 @@ async fn run_install_steps(
                 "install",
                 "-g",
                 "openclaw",
+                &registry_flag,
                 "--no-update-notifier",
                 "--no-fund",
             ],
@@ -1644,25 +1762,30 @@ async fn run_install_steps(
     } else {
         match &strategy {
             NodeStrategy::SystemNode(_) => {
-                run_login_shell_step(
-                    app,
-                    "npm install -g openclaw --no-update-notifier --no-fund",
-                    cancel_rx,
-                )
-                .await
+                let cmd = format!(
+                    "npm install -g openclaw {} --no-update-notifier --no-fund",
+                    registry_flag
+                );
+                run_login_shell_step(app, &cmd, cancel_rx).await
             }
             NodeStrategy::SystemFnm => {
                 let cmd = format!(
-                    "fnm exec --using=22 -- {} install -g openclaw --no-update-notifier --no-fund",
-                    npm_bin
+                    "fnm exec --using=22 -- {} install -g openclaw {} --no-update-notifier --no-fund",
+                    npm_bin, registry_flag
                 );
                 run_login_shell_step(app, &cmd, cancel_rx).await
             }
             NodeStrategy::SystemNvm => {
                 #[cfg(not(target_os = "windows"))]
-                let cmd = format!("source '{}' && nvm exec 22 npm install -g openclaw --no-update-notifier --no-fund", nvm_sh.display());
+                let cmd = format!(
+                    "source '{}' && nvm exec 22 npm install -g openclaw {} --no-update-notifier --no-fund",
+                    nvm_sh.display(), registry_flag
+                );
                 #[cfg(target_os = "windows")]
-                let cmd = "npm install -g openclaw --no-update-notifier --no-fund".to_string();
+                let cmd = format!(
+                    "npm install -g openclaw {} --no-update-notifier --no-fund",
+                    registry_flag
+                );
                 run_login_shell_step(app, &cmd, cancel_rx).await
             }
             NodeStrategy::BundledFnm => unreachable!(),
