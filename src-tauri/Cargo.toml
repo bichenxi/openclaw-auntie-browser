@@ -1,6 +1,6 @@
 [package]
 name = "oclaw"
-version = "1.4.2"
+version = "1.4.6"
 description = "Oclaw - Tauri backend (browser for OpenClaw)"
 authors = ["you"]
 edition = "2021"
