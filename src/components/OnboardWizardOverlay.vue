@@ -244,10 +244,6 @@ function startListeners() {
     store.wizardPrompt = next
     waitingNext.value = false
 
-    if (next.prompt_type === 'done') {
-      startGateway()
-    }
-
     if (next.prompt_type === 'multiselect') {
       if (msQuestion.value !== next.question) {
         msCursor.value = 0
@@ -418,7 +414,6 @@ async function answerInput() {
 }
 
 async function startGateway() {
-  if (store.wizardStartingGateway || store.wizardGatewayDone) return
   store.wizardStartingGateway = true
   try {
     await restartOpenclawGateway()
