@@ -467,10 +467,7 @@ async function goToChat() {
         v-if="store.wizardVisible"
         class="fixed inset-0 z-[9999] flex items-center justify-center"
       >
-        <div
-          class="absolute inset-0 bg-black/40 backdrop-blur-sm"
-          @click="handleClose()"
-        />
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" />
 
         <div class="relative w-full max-w-[520px] mx-4 bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
           <!-- Header -->
@@ -798,6 +795,11 @@ async function goToChat() {
                 <p class="text-[10px] text-[#9b8ec4] m-0">↑↓ 移动光标，「切换」勾选/取消，「确认」提交</p>
               </div>
 
+              <!-- Windows 加载期误解析为 input 且 question 为空时，显示 loading 而非输入框 -->
+              <div v-else-if="(store.wizardPrompt.prompt_type === 'input' || store.wizardPrompt.prompt_type === 'password') && !store.wizardPrompt.question.trim()" class="flex flex-col items-center gap-3 py-10">
+                <span class="w-7 h-7 border-[2.5px] border-secondary border-t-transparent rounded-full animate-spin" />
+                <span class="text-[13px] text-[#9b8ec4]">正在加载配置项…</span>
+              </div>
               <!-- Input / Password -->
               <div v-else-if="store.wizardPrompt.prompt_type === 'input' || store.wizardPrompt.prompt_type === 'password'" class="flex flex-col gap-3">
                 <p class="text-[13px] font-medium text-[#4a4568] m-0">{{ t(store.wizardPrompt.question) }}</p>
@@ -820,21 +822,11 @@ async function goToChat() {
               </div>
 
               <!-- Done (from TUI) -->
-              <div v-else-if="store.wizardPrompt.prompt_type === 'done'" class="flex flex-col gap-3">
-                <div class="flex items-center gap-3 px-4 py-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  <span class="text-[13px] font-medium">{{ t(store.wizardPrompt.question) }}</span>
-                </div>
-                <button
-                  v-if="!store.wizardStartingGateway && !store.wizardGatewayDone"
-                  type="button"
-                  class="self-end px-5 py-2 text-[13px] font-medium text-white rounded-[8px] cursor-pointer transition bg-[linear-gradient(135deg,#7c5cfc_0%,#5f47ce_100%)] shadow-[0_2px_8px_rgba(95,71,206,0.2)]"
-                  @click="startGateway()"
-                >
-                  完成配置，启动网关
-                </button>
+              <div v-else-if="store.wizardPrompt.prompt_type === 'done'" class="flex items-center gap-3 px-4 py-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span class="text-[13px] font-medium">{{ t(store.wizardPrompt.question) }}</span>
               </div>
 
               <!-- Info / 未知类型 -->
