@@ -8,7 +8,11 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgentAddWizard: typeof import('./components/AgentAddWizard.vue')['default']
+    AgentEditorPage: typeof import('./views/AgentEditorPage.vue')['default']
+    AgentsPage: typeof import('./views/AgentsPage.vue')['default']
     AIConsole: typeof import('./components/AIConsole.vue')['default']
+    FlowEditorPage: typeof import('./views/FlowEditorPage.vue')['default']
     OnboardOverlay: typeof import('./components/OnboardOverlay.vue')['default']
     OnboardWizardOverlay: typeof import('./components/OnboardWizardOverlay.vue')['default']
     OpenclawPage: typeof import('./views/OpenclawPage.vue')['default']

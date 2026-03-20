@@ -92,6 +92,38 @@ const disabledItem = computed(() =>
       <span class="overflow-hidden text-ellipsis whitespace-nowrap leading-none">技能</span>
     </div>
 
+    <!-- 智能体按钮 -->
+    <div
+      class="tab-item flex items-center gap-[5px] px-3 min-w-auto rounded-t-lg cursor-pointer transition text-[#8a80a7] text-[13px] whitespace-nowrap relative mt-1.5"
+      :class="[disabledItem, store.specialView === 'agents'
+        ? 'bg-secondary/10 text-secondary'
+        : 'hover:bg-secondary/6 hover:text-secondary']"
+      @click="store.switchToSpecialView('agents')"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      </svg>
+      <span class="overflow-hidden text-ellipsis whitespace-nowrap leading-none">智能体</span>
+    </div>
+
+    <!-- Flow 编排按钮 -->
+    <div
+      class="tab-item flex items-center gap-[5px] px-3 min-w-auto rounded-t-lg cursor-pointer transition text-[#8a80a7] text-[13px] whitespace-nowrap relative mt-1.5"
+      :class="[disabledItem, store.specialView === 'flow-editor'
+        ? 'bg-secondary/10 text-secondary'
+        : 'hover:bg-secondary/6 hover:text-secondary']"
+      @click="store.switchToSpecialView('flow-editor')"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="5" cy="12" r="2" /><circle cx="19" cy="5" r="2" /><circle cx="19" cy="19" r="2" />
+        <line x1="7" y1="12" x2="17" y2="6" /><line x1="7" y1="12" x2="17" y2="18" />
+      </svg>
+      <span class="overflow-hidden text-ellipsis whitespace-nowrap leading-none">Flow</span>
+    </div>
+
     <!-- 设置按钮 -->
     <div
       class="tab-item flex items-center gap-[5px] px-3 min-w-auto rounded-t-lg cursor-pointer transition text-[#8a80a7] text-[13px] whitespace-nowrap relative mt-1.5"

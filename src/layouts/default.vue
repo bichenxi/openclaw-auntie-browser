@@ -6,6 +6,9 @@ import OpenclawPage from '@/views/OpenclawPage.vue'
 import SettingsPage from '@/views/SettingsPage.vue'
 import SkillsPage from '@/views/SkillsPage.vue'
 import SetupPage from '@/views/SetupPage.vue'
+import AgentsPage from '@/views/AgentsPage.vue'
+import AgentEditorPage from '@/views/AgentEditorPage.vue'
+import FlowEditorPage from '@/views/FlowEditorPage.vue'
 import { useTabsStore } from '@/stores/tabs'
 
 const store = useTabsStore()
@@ -23,6 +26,9 @@ const store = useTabsStore()
       <OpenclawPage v-else-if="store.specialView === 'openclaw'" />
       <SettingsPage v-else-if="store.specialView === 'settings'" />
       <SkillsPage v-else-if="store.specialView === 'skills'" />
+      <AgentsPage v-else-if="store.specialView === 'agents'" />
+      <AgentEditorPage v-else-if="store.specialView === 'agent-editor'" />
+      <FlowEditorPage v-else-if="store.specialView === 'flow-editor'" />
       <RouterView v-else-if="store.isHome" />
       <Transition v-else name="fade">
         <div

@@ -377,7 +377,7 @@ impl Default for OnboardWizardState {
 
 
 /// 返回补充 PATH 用的目录列表（跨平台版本）。
-fn wizard_extra_path_dirs(app: &AppHandle) -> Vec<String> {
+pub fn wizard_extra_path_dirs(app: &AppHandle) -> Vec<String> {
     let home = app.path().home_dir().ok()
         .and_then(|p| p.to_str().map(String::from))
         .or_else(|| std::env::var("HOME").ok())

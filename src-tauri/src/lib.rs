@@ -1,4 +1,6 @@
+mod agents;
 mod api;
+mod flows;
 mod app;
 mod config;
 mod configure;
@@ -40,6 +42,8 @@ pub fn run() {
         .manage(InstallerState::default())
         .manage(configure::OnboardPtyState::default())
         .manage(configure::OnboardWizardState::default())
+        .manage(agents::AgentWizardState::default())
+        .manage(flows::FlowRuntimeState::default())
         .setup(|app| {
             api::spawn_http_server(app.handle().clone());
             Ok(())
@@ -100,6 +104,26 @@ pub fn run() {
             gateway::check_and_fix_gateway_config,
             gateway::start_openclaw_gateway,
             gateway::restart_openclaw_gateway,
+            agents::list_agents,
+            agents::list_agent_files,
+            agents::read_agent_file,
+            agents::write_agent_file,
+            agents::start_agent_add_wizard,
+            agents::agent_wizard_send_key,
+            agents::agent_wizard_send_keys,
+            agents::kill_agent_wizard,
+            agents::is_agent_wizard_running,
+            flows::list_flows,
+            flows::load_flow,
+            flows::save_flow,
+            flows::delete_flow,
+            flows::get_flow_execution,
+            flows::set_node_output,
+            flows::get_node_output,
+            flows::init_flow_execution,
+            flows::update_node_status,
+            flows::append_flow_log,
+            flows::finish_flow_execution,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -14,7 +14,7 @@ export interface TabItem {
   title: string
 }
 
-export type SpecialView = 'openclaw' | 'settings' | 'skills' | 'setup'
+export type SpecialView = 'openclaw' | 'settings' | 'skills' | 'setup' | 'agents' | 'agent-editor' | 'flow-editor'
 
 export const useTabsStore = defineStore('tabs', () => {
   const tabs = ref<TabItem[]>([])

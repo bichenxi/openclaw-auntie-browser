@@ -1,0 +1,348 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Flow System API Schema",
+  "description": "Complete type definitions for Agent Flow orchestration system",
+  "definitions": {
+    "AgentFlow": {
+      "type": "object",
+      "title": "Agent Flow Definition",
+      "description": "Complete workflow definition with nodes and edges",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique flow identifier (UUID format preferred)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable flow name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional flow description"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Semantic versioning"
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Array of flow nodes",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/definitions/AgentNode" },
+              { "$ref": "#/definitions/TaskNode" },
+              { "$ref": "#/definitions/GatewayNode" }
+            ]
+          }
+        },
+        "edges": {
+          "type": "array",
+          "description": "Array of connections between nodes",
+          "items": { "$ref": "#/definitions/FlowEdge" }
+        },
+        "createdAt": {
+          "type": "integer",
+          "description": "Creation timestamp (ms since epoch)"
+        },
+        "updatedAt": {
+          "type": "integer",
+          "description": "Last update timestamp (ms since epoch)"
+        },
+        "author": {
+          "type": "string",
+          "description": "Optional author identifier"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional classification tags"
+        }
+      },
+      "required": ["id", "name", "version", "nodes", "edges", "createdAt", "updatedAt"]
+    },
+    "AgentNode": {
+      "type": "object",
+      "title": "Agent Node",
+      "description": "Node that invokes a configured Agent",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node identifier within flow"
+        },
+        "type": {
+          "const": "agent",
+          "description": "Node type identifier"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "agentWork": {
+              "type": "string",
+              "description": "Referenced Agent workspace name"
+            },
+            "label": {
+              "type": "string",
+              "description": "Display name in editor"
+            },
+            "prompt": {
+              "type": "string",
+              "description": "Optional system prompt to pass to Agent"
+            },
+            "timeout": {
+              "type": "integer",
+              "description": "Execution timeout in milliseconds"
+            }
+          },
+          "required": ["agentWork", "label"]
+        },
+        "position": { "$ref": "#/definitions/Position" },
+        "status": {
+          "type": "string",
+          "enum": ["idle", "pending", "running", "done", "error", "skipped"],
+          "description": "Current execution status (runtime only)"
+        },
+        "result": {
+          "description": "Execution result (runtime only)"
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if execution failed"
+        }
+      },
+      "required": ["id", "type", "data", "position"]
+    },
+    "TaskNode": {
+      "type": "object",
+      "title": "Task Node",
+      "description": "Local operation node (transform, merge, split, etc.)",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "const": "task" },
+        "data": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "operation": {
+              "type": "string",
+              "enum": ["transform", "merge", "split", "wait", "filter"],
+              "description": "Operation type"
+            },
+            "config": {
+              "type": "object",
+              "description": "Operation-specific configuration"
+            }
+          },
+          "required": ["label", "operation"]
+        },
+        "position": { "$ref": "#/definitions/Position" },
+        "status": { "type": "string" },
+        "result": {},
+        "error": { "type": "string" }
+      },
+      "required": ["id", "type", "data", "position"]
+    },
+    "GatewayNode": {
+      "type": "object",
+      "title": "Gateway Node",
+      "description": "Conditional branching node (if-else, switch, merge)",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "const": "gateway" },
+        "data": {
+          "type": "object",
+          "properties": {
+            "label": { "type": "string" },
+            "gatewayType": {
+              "type": "string",
+              "enum": ["if-else", "switch", "merge"],
+              "description": "Gateway control flow type"
+            },
+            "condition": {
+              "type": "string",
+              "description": "Condition expression (JavaScript subset)"
+            }
+          },
+          "required": ["label", "gatewayType"]
+        },
+        "position": { "$ref": "#/definitions/Position" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "type", "data", "position"]
+    },
+    "FlowEdge": {
+      "type": "object",
+      "title": "Flow Edge",
+      "description": "Connection between two nodes",
+      "properties": {
+        "id": { "type": "string" },
+        "source": {
+          "type": "string",
+          "description": "Source node ID"
+        },
+        "target": {
+          "type": "string",
+          "description": "Target node ID"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "description": "Edge label (e.g., success/error routing)"
+            },
+            "condition": {
+              "type": "string",
+              "description": "Conditional routing expression"
+            }
+          }
+        }
+      },
+      "required": ["id", "source", "target"]
+    },
+    "Position": {
+      "type": "object",
+      "title": "Canvas Position",
+      "description": "2D coordinates for node rendering",
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      },
+      "required": ["x", "y"]
+    },
+    "FlowExecution": {
+      "type": "object",
+      "title": "Flow Execution Instance",
+      "description": "Runtime state of a flow execution",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique execution instance ID"
+        },
+        "flowId": {
+          "type": "string",
+          "description": "Reference to AgentFlow ID"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "paused", "done", "error", "cancelled"],
+          "description": "Current execution status"
+        },
+        "startTime": {
+          "type": "integer",
+          "description": "Execution start timestamp"
+        },
+        "endTime": {
+          "type": "integer",
+          "description": "Execution end timestamp"
+        },
+        "duration": {
+          "type": "integer",
+          "description": "Total execution duration in milliseconds"
+        },
+        "nodeResults": {
+          "type": "object",
+          "description": "Map of nodeId -> NodeResult",
+          "additionalProperties": { "$ref": "#/definitions/NodeResult" }
+        },
+        "logs": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ExecutionLog" }
+        },
+        "pausedAt": {
+          "type": "integer",
+          "description": "Pause timestamp if paused"
+        },
+        "resumeFrom": {
+          "type": "string",
+          "description": "Node ID to resume from"
+        }
+      },
+      "required": ["id", "flowId", "status", "nodeResults", "logs"]
+    },
+    "NodeResult": {
+      "type": "object",
+      "title": "Node Execution Result",
+      "description": "Execution outcome for a single node",
+      "properties": {
+        "nodeId": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["idle", "pending", "running", "done", "error", "skipped"]
+        },
+        "output": {
+          "description": "Node output data (for downstream nodes)"
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if failed"
+        },
+        "duration": {
+          "type": "integer",
+          "description": "Execution duration in ms"
+        },
+        "startTime": { "type": "integer" },
+        "endTime": { "type": "integer" }
+      },
+      "required": ["nodeId", "status"]
+    },
+    "ExecutionLog": {
+      "type": "object",
+      "title": "Execution Log Entry",
+      "description": "Single log line during execution",
+      "properties": {
+        "timestamp": { "type": "integer" },
+        "nodeId": {
+          "type": "string",
+          "description": "Associated node ID (optional)"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["info", "warn", "error"]
+        },
+        "message": { "type": "string" }
+      },
+      "required": ["timestamp", "level", "message"]
+    }
+  },
+  "examples": {
+    "AgentFlow": {
+      "id": "flow-abc123",
+      "name": "Web Scraping Pipeline",
+      "description": "Collect data from web, clean, and export",
+      "version": "1.0.0",
+      "createdAt": 1711000000000,
+      "updatedAt": 1711000000000,
+      "nodes": [
+        {
+          "id": "agent-collector",
+          "type": "agent",
+          "data": {
+            "agentWork": "collector",
+            "label": "Web Collector",
+            "prompt": "Extract structured data from URLs",
+            "timeout": 30000
+          },
+          "position": { "x": 100, "y": 100 }
+        },
+        {
+          "id": "agent-cleaner",
+          "type": "agent",
+          "data": {
+            "agentWork": "cleaner",
+            "label": "Data Cleaner"
+          },
+          "position": { "x": 350, "y": 100 }
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-1",
+          "source": "agent-collector",
+          "target": "agent-cleaner",
+          "data": { "label": "raw data" }
+        }
+      ]
+    }
+  }
+}
