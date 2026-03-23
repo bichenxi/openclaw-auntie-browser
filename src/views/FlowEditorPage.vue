@@ -210,12 +210,34 @@ const executionLevels = computed(() =>
   editingFlow.value ? getExecutionLevels(editingFlow.value) : []
 )
 
-/** 节点输入 = 所有直接前驱的输出拼接，无前驱时用 fallback */
-function getNodeInput(nodeId: string, flow: AgentFlow, outputs: Map<string, string>, fallback: string): string {
-  const srcs = flow.edges.filter(e => e.target === nodeId).map(e => outputs.get(e.source)).filter(Boolean) as string[]
-  if (srcs.length === 0) return fallback
-  if (srcs.length === 1) return srcs[0]
-  return srcs.map((o, i) => `[上游输入 ${i + 1}]\n${o}`).join('\n\n')
+/** 为节点构建完整 prompt：原始任务 + 自己的角色 + 前驱输出 */
+function buildNodePrompt(
+  node: FlowNode,
+  flow: AgentFlow,
+  outputs: Map<string, string>,
+  initialTask: string,
+): string {
+  const sourceOutputs = flow.edges
+    .filter(e => e.target === node.id)
+    .map(e => {
+      const src = flow.nodes.find(n => n.id === e.source)
+      const out = outputs.get(e.source)
+      return out ? { label: src?.label ?? e.source, text: out } : null
+    })
+    .filter(Boolean) as { label: string; text: string }[]
+
+  const parts: string[] = []
+  parts.push(`【总体任务】\n${initialTask}`)
+  parts.push(`【你的角色】\n你是"${node.label}"，在工作流中负责你的专属环节，请围绕总体任务完成你的部分。`)
+
+  if (sourceOutputs.length === 1) {
+    parts.push(`【上游输出（来自「${sourceOutputs[0].label}」）】\n${sourceOutputs[0].text}`)
+  } else if (sourceOutputs.length > 1) {
+    const combined = sourceOutputs.map(s => `— 来自「${s.label}」：\n${s.text}`).join('\n\n')
+    parts.push(`【上游输出】\n${combined}`)
+  }
+
+  return parts.join('\n\n')
 }
 
 async function startRun() {
@@ -256,7 +278,7 @@ async function startRun() {
     if (levelNodes.length === 1) {
       // ── 串行单节点：流式执行 ──
       const node = levelNodes[0]
-      const input = getNodeInput(node.id, flow, nodeOutputs, initialTask.value)
+      const input = buildNodePrompt(node, flow, nodeOutputs, initialTask.value)
       setNodeVisualStatus(node.id, 'agent', 'running')
       ocStore.messages.push({ type: 'user', text: `▶ [${node.label}]\n${input}`, streaming: false })
       ocStore.sending = true
@@ -297,7 +319,7 @@ async function startRun() {
           runFlowNode({
             token,
             sessionKey: `agent:${node.agent_work}:${node.agent_work}`,
-            input: getNodeInput(node.id, flow, nodeOutputs, initialTask.value),
+            input: buildNodePrompt(node, flow, nodeOutputs, initialTask.value),
             ...baseUrlOpt,
           })
         )
