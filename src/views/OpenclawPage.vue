@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useTabsStore } from '@/stores/tabs'
 import { useSettingsStore } from '@/stores/settings'
 import { useOpenclawStore } from '@/stores/openclaw'
+import FlowExecutionCard from '@/components/FlowExecutionCard.vue'
 import {
   checkOpenclawAlive,
   openclawSendV1,
@@ -268,7 +269,11 @@ watch(tempMessages, scrollToBottom, { deep: true })
           <p class="text-[12px] text-[#9b8ec4] m-0 text-center">支持自然语言指令，如「帮我搜索小红书上的旅游攻略」</p>
         </div>
         <div v-for="(msg, i) in messages" :key="i" class="flex flex-col" :class="msg.type === 'user' ? 'items-end' : 'items-start'">
-          <template v-if="msg.type === 'user'">
+          <!-- 工作流执行卡片 -->
+          <template v-if="msg.type === 'flow'">
+            <FlowExecutionCard :execution-id="msg.executionId!" />
+          </template>
+          <template v-else-if="msg.type === 'user'">
             <div class="max-w-[75%] bg-[linear-gradient(135deg,#7c5cfc_0%,#5f47ce_100%)] text-white px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_2px_8px_rgba(95,71,206,0.25)]">
               <span class="text-[13px] leading-[1.6] text-white whitespace-pre-wrap break-words">{{ msg.text }}</span>
             </div>

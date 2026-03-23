@@ -259,29 +259,34 @@ async function startRun() {
 
   runDialogVisible.value = false
   running.value = true
+
+  // 切换到对话视图
   tabsStore.switchToSpecialView('openclaw')
 
-  // 执行计划标题
-  const planText = levels.map(lvl =>
-    lvl.length === 1 ? lvl[0].label : `{ ${lvl.map(n => n.label).join(' + ')} }`
-  ).join(' → ')
-  ocStore.messages.push({
-    type: 'user',
-    text: `🔗 工作流：${flow.name}\n执行计划：${planText}`,
-    streaming: false,
-  })
+  // 屏蔽 stream-item 写入主聊天（执行卡片自行展示进度）
+  ocStore.suppressStream = true
+
+  // 创建执行状态，推入一条 flow 类型消息（渲染为卡片）
+  const execId = ocStore.createFlowExecution(
+    flow.name,
+    initialTask.value,
+    levels.map(lvl => lvl.map(n => ({ id: n.id, label: n.label }))),
+  )
+  ocStore.messages.push({ type: 'flow', text: '', streaming: false, executionId: execId })
 
   const nodeOutputs = new Map<string, string>()
   const baseUrlOpt = settingsStore.baseUrl ? { baseUrl: settingsStore.baseUrl } : {}
+  let finalOutput = ''
+  let allSucceeded = true
 
   for (const levelNodes of levels) {
     if (levelNodes.length === 1) {
-      // ── 串行单节点：流式执行 ──
+      // ── 串行单节点 ──
       const node = levelNodes[0]
       const input = buildNodePrompt(node, flow, nodeOutputs, initialTask.value)
       setNodeVisualStatus(node.id, 'agent', 'running')
-      ocStore.messages.push({ type: 'user', text: `▶ [${node.label}]\n${input}`, streaming: false })
-      ocStore.sending = true
+      ocStore.updateFlowNode(execId, node.id, { status: 'running' })
+
       try {
         const output = await runFlowNode({
           token,
@@ -291,28 +296,21 @@ async function startRun() {
         })
         setNodeVisualStatus(node.id, 'agent', 'completed')
         nodeOutputs.set(node.id, output)
+        finalOutput = output
+        ocStore.updateFlowNode(execId, node.id, { status: 'completed', output })
       } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err)
         setNodeVisualStatus(node.id, 'agent', 'failed')
-        ocStore.messages.push({
-          type: 'user',
-          text: `✗ [${node.label}] 失败：${err instanceof Error ? err.message : String(err)}`,
-          streaming: false,
-        })
+        ocStore.updateFlowNode(execId, node.id, { status: 'failed', error: errMsg })
+        allSucceeded = false
         break
-      } finally {
-        ocStore.sending = false
-        const last = ocStore.messages[ocStore.messages.length - 1]
-        if (last?.streaming) last.streaming = false
       }
     } else {
-      // ── 并行多节点：同时触发，等全部完成 ──
-      ocStore.messages.push({
-        type: 'user',
-        text: `⚡ 并行执行：${levelNodes.map(n => `[${n.label}]`).join(' + ')}`,
-        streaming: false,
+      // ── 并行多节点 ──
+      levelNodes.forEach(n => {
+        setNodeVisualStatus(n.id, 'agent', 'running')
+        ocStore.updateFlowNode(execId, n.id, { status: 'running' })
       })
-      levelNodes.forEach(n => setNodeVisualStatus(n.id, 'agent', 'running'))
-      ocStore.sending = true
 
       const results = await Promise.allSettled(
         levelNodes.map(node =>
@@ -325,32 +323,37 @@ async function startRun() {
         )
       )
 
-      ocStore.sending = false
-      const last = ocStore.messages[ocStore.messages.length - 1]
-      if (last?.streaming) last.streaming = false
-
       let anyFailed = false
+      const parallelOutputs: string[] = []
       for (let i = 0; i < results.length; i++) {
         const res = results[i]
         const node = levelNodes[i]
         if (res.status === 'fulfilled') {
           setNodeVisualStatus(node.id, 'agent', 'completed')
           nodeOutputs.set(node.id, res.value)
+          parallelOutputs.push(res.value)
+          ocStore.updateFlowNode(execId, node.id, { status: 'completed', output: res.value })
         } else {
+          const errMsg = res.reason instanceof Error ? res.reason.message : String(res.reason)
           setNodeVisualStatus(node.id, 'agent', 'failed')
+          ocStore.updateFlowNode(execId, node.id, { status: 'failed', error: errMsg })
           anyFailed = true
-          ocStore.messages.push({
-            type: 'user',
-            text: `✗ [${node.label}] 失败：${res.reason instanceof Error ? res.reason.message : String(res.reason)}`,
-            streaming: false,
-          })
+          allSucceeded = false
         }
       }
+      if (parallelOutputs.length > 0) finalOutput = parallelOutputs[parallelOutputs.length - 1]
       if (anyFailed) break
     }
   }
 
+  ocStore.finishFlowExecution(execId, allSucceeded ? 'completed' : 'failed')
+  ocStore.suppressStream = false
   running.value = false
+
+  // 最终结果以普通对话形式展示
+  if (allSucceeded && finalOutput) {
+    ocStore.messages.push({ type: 'thought', text: finalOutput, streaming: false })
+  }
 }
 </script>
 
