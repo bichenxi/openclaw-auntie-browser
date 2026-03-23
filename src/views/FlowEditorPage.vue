@@ -168,30 +168,60 @@ async function removeFlow(flowId: string) {
 
 // ── 执行（结果在对话中展示） ────────────────────────────────────────────────
 
-/** 拓扑排序：从 start 出发，BFS 收集 agent 节点 */
-function getExecutionOrder(flow: AgentFlow): FlowNode[] {
+/**
+ * Kahn BFS 按层次分组节点：同层节点可并行执行
+ * 返回 [[level0 agents], [level1 agents], ...]
+ */
+function getExecutionLevels(flow: AgentFlow): FlowNode[][] {
   const nodeMap = new Map(flow.nodes.map(n => [n.id, n]))
-  const startNode = flow.nodes.find(n => n.type === 'start')
-  if (!startNode) return flow.nodes.filter(n => n.type === 'agent')
-
-  const visited = new Set<string>()
-  const order: FlowNode[] = []
-  const queue = [startNode.id]
-  while (queue.length) {
-    const id = queue.shift()!
-    if (visited.has(id)) continue
-    visited.add(id)
-    const node = nodeMap.get(id)
-    if (node?.type === 'agent') order.push(node)
-    flow.edges.filter(e => e.source === id).forEach(e => queue.push(e.target))
+  const inDegree = new Map<string, number>()
+  const childrenOf = new Map<string, string[]>()
+  for (const n of flow.nodes) { inDegree.set(n.id, 0); childrenOf.set(n.id, []) }
+  for (const e of flow.edges) {
+    inDegree.set(e.target, (inDegree.get(e.target) ?? 0) + 1)
+    childrenOf.get(e.source)?.push(e.target)
   }
-  return order
+
+  const levels: FlowNode[][] = []
+  const visited = new Set<string>()
+  let frontier = flow.nodes.filter(n => (inDegree.get(n.id) ?? 0) === 0)
+
+  while (frontier.length > 0) {
+    const agentLevel = frontier.filter(n => n.type === 'agent')
+    if (agentLevel.length > 0) levels.push(agentLevel)
+    const next: FlowNode[] = []
+    for (const n of frontier) {
+      visited.add(n.id)
+      for (const cid of childrenOf.get(n.id) ?? []) {
+        const deg = (inDegree.get(cid) ?? 0) - 1
+        inDegree.set(cid, deg)
+        if (deg === 0 && !visited.has(cid)) {
+          const child = nodeMap.get(cid)
+          if (child) next.push(child)
+        }
+      }
+    }
+    frontier = next
+  }
+  return levels
+}
+
+const executionLevels = computed(() =>
+  editingFlow.value ? getExecutionLevels(editingFlow.value) : []
+)
+
+/** 节点输入 = 所有直接前驱的输出拼接，无前驱时用 fallback */
+function getNodeInput(nodeId: string, flow: AgentFlow, outputs: Map<string, string>, fallback: string): string {
+  const srcs = flow.edges.filter(e => e.target === nodeId).map(e => outputs.get(e.source)).filter(Boolean) as string[]
+  if (srcs.length === 0) return fallback
+  if (srcs.length === 1) return srcs[0]
+  return srcs.map((o, i) => `[上游输入 ${i + 1}]\n${o}`).join('\n\n')
 }
 
 async function startRun() {
   if (!editingFlow.value || !initialTask.value.trim()) return
   const flow = editingFlow.value
-  const agentNodes = getExecutionOrder(flow)
+  const levels = getExecutionLevels(flow)
   const token = settingsStore.bearerToken
 
   if (!token) {
@@ -199,7 +229,7 @@ async function startRun() {
     tabsStore.switchToSpecialView('openclaw')
     return
   }
-  if (agentNodes.length === 0) {
+  if (levels.length === 0) {
     ocStore.messages.push({ type: 'user', text: '⚠️ 工作流没有 Agent 节点', streaming: false })
     tabsStore.switchToSpecialView('openclaw')
     return
@@ -207,54 +237,94 @@ async function startRun() {
 
   runDialogVisible.value = false
   running.value = true
-
-  // 切换到对话视图，让结果显示在那里
   tabsStore.switchToSpecialView('openclaw')
 
-  // 工作流开始标记
+  // 执行计划标题
+  const planText = levels.map(lvl =>
+    lvl.length === 1 ? lvl[0].label : `{ ${lvl.map(n => n.label).join(' + ')} }`
+  ).join(' → ')
   ocStore.messages.push({
     type: 'user',
-    text: `🔗 工作流：${flow.name}\n执行顺序：${agentNodes.map(n => n.label).join(' → ')}`,
+    text: `🔗 工作流：${flow.name}\n执行计划：${planText}`,
     streaming: false,
   })
 
-  let context = initialTask.value
+  const nodeOutputs = new Map<string, string>()
+  const baseUrlOpt = settingsStore.baseUrl ? { baseUrl: settingsStore.baseUrl } : {}
 
-  for (const node of agentNodes) {
-    const nodeType = flow.nodes.find(n => n.id === node.id)?.type ?? 'agent'
-    setNodeVisualStatus(node.id, nodeType, 'running')
-
-    // 把发给 Agent 的任务显示为用户消息
-    ocStore.messages.push({
-      type: 'user',
-      text: `▶ [${node.label}]\n${context}`,
-      streaming: false,
-    })
-    ocStore.sending = true
-
-    try {
-      // run_flow_node 会发 stream-item/stream-done 事件，响应自然出现在对话里
-      const output = await runFlowNode({
-        token,
-        sessionKey: `agent:${node.agent_work}:${node.agent_work}`,
-        input: context,
-        ...(settingsStore.baseUrl ? { baseUrl: settingsStore.baseUrl } : {}),
-      })
-      setNodeVisualStatus(node.id, nodeType, 'completed')
-      context = output
-    } catch (err: unknown) {
-      setNodeVisualStatus(node.id, nodeType, 'failed')
+  for (const levelNodes of levels) {
+    if (levelNodes.length === 1) {
+      // ── 串行单节点：流式执行 ──
+      const node = levelNodes[0]
+      const input = getNodeInput(node.id, flow, nodeOutputs, initialTask.value)
+      setNodeVisualStatus(node.id, 'agent', 'running')
+      ocStore.messages.push({ type: 'user', text: `▶ [${node.label}]\n${input}`, streaming: false })
+      ocStore.sending = true
+      try {
+        const output = await runFlowNode({
+          token,
+          sessionKey: `agent:${node.agent_work}:${node.agent_work}`,
+          input,
+          ...baseUrlOpt,
+        })
+        setNodeVisualStatus(node.id, 'agent', 'completed')
+        nodeOutputs.set(node.id, output)
+      } catch (err: unknown) {
+        setNodeVisualStatus(node.id, 'agent', 'failed')
+        ocStore.messages.push({
+          type: 'user',
+          text: `✗ [${node.label}] 失败：${err instanceof Error ? err.message : String(err)}`,
+          streaming: false,
+        })
+        break
+      } finally {
+        ocStore.sending = false
+        const last = ocStore.messages[ocStore.messages.length - 1]
+        if (last?.streaming) last.streaming = false
+      }
+    } else {
+      // ── 并行多节点：同时触发，等全部完成 ──
       ocStore.messages.push({
         type: 'user',
-        text: `✗ [${node.label}] 失败：${err instanceof Error ? err.message : String(err)}`,
+        text: `⚡ 并行执行：${levelNodes.map(n => `[${n.label}]`).join(' + ')}`,
         streaming: false,
       })
-      break
-    } finally {
-      // 确保 sending 状态归位（stream-done 可能已设，再设一次无害）
+      levelNodes.forEach(n => setNodeVisualStatus(n.id, 'agent', 'running'))
+      ocStore.sending = true
+
+      const results = await Promise.allSettled(
+        levelNodes.map(node =>
+          runFlowNode({
+            token,
+            sessionKey: `agent:${node.agent_work}:${node.agent_work}`,
+            input: getNodeInput(node.id, flow, nodeOutputs, initialTask.value),
+            ...baseUrlOpt,
+          })
+        )
+      )
+
       ocStore.sending = false
       const last = ocStore.messages[ocStore.messages.length - 1]
       if (last?.streaming) last.streaming = false
+
+      let anyFailed = false
+      for (let i = 0; i < results.length; i++) {
+        const res = results[i]
+        const node = levelNodes[i]
+        if (res.status === 'fulfilled') {
+          setNodeVisualStatus(node.id, 'agent', 'completed')
+          nodeOutputs.set(node.id, res.value)
+        } else {
+          setNodeVisualStatus(node.id, 'agent', 'failed')
+          anyFailed = true
+          ocStore.messages.push({
+            type: 'user',
+            text: `✗ [${node.label}] 失败：${res.reason instanceof Error ? res.reason.message : String(res.reason)}`,
+            streaming: false,
+          })
+        }
+      }
+      if (anyFailed) break
     }
   }
 
@@ -444,15 +514,22 @@ async function startRun() {
           </div>
 
           <div class="px-6 py-5 flex flex-col gap-4">
-            <!-- 执行顺序预览 -->
+            <!-- 执行计划预览 -->
             <div>
-              <div class="text-[11px] font-medium text-[#9b8ec4] mb-2">执行顺序</div>
+              <div class="text-[11px] font-medium text-[#9b8ec4] mb-2">执行计划</div>
               <div class="flex flex-wrap gap-1.5 items-center">
-                <template v-for="(node, i) in (editingFlow ? getExecutionOrder(editingFlow) : [])" :key="node.id">
-                  <span class="px-2.5 py-1 text-[11px] rounded-full bg-[#f0ecfa] text-[#5f47ce] border border-[#e4dcf7]">{{ node.label }}</span>
-                  <svg v-if="i < getExecutionOrder(editingFlow!).length - 1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4bdd8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+                <template v-for="(lvl, li) in executionLevels" :key="li">
+                  <!-- 并行组 -->
+                  <div v-if="lvl.length > 1" class="flex gap-1 items-center px-2 py-1 rounded-lg bg-amber-50 border border-amber-200">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    <span v-for="node in lvl" :key="node.id" class="text-[11px] text-amber-700">{{ node.label }}</span>
+                  </div>
+                  <!-- 单节点 -->
+                  <span v-else class="px-2.5 py-1 text-[11px] rounded-full bg-[#f0ecfa] text-[#5f47ce] border border-[#e4dcf7]">{{ lvl[0].label }}</span>
+                  <!-- 箭头 -->
+                  <svg v-if="li < executionLevels.length - 1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c4bdd8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
                 </template>
-                <span v-if="getExecutionOrder(editingFlow!).length === 0" class="text-[11px] text-[#b8b0cc]">没有 Agent 节点，请先添加</span>
+                <span v-if="executionLevels.length === 0" class="text-[11px] text-[#b8b0cc]">没有 Agent 节点，请先添加</span>
               </div>
             </div>
 
@@ -473,7 +550,7 @@ async function startRun() {
             <button class="px-4 py-2 text-[13px] rounded-[8px] border border-[#e8e2f4] text-[#6b5f8a] bg-white hover:bg-[#f5f3ff] cursor-pointer transition" @click="runDialogVisible = false">取消</button>
             <button
               class="px-5 py-2 text-[13px] font-medium text-white rounded-[8px] cursor-pointer transition bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              :disabled="!initialTask.trim() || getExecutionOrder(editingFlow!).length === 0"
+              :disabled="!initialTask.trim() || executionLevels.length === 0"
               @click="startRun"
             >开始执行</button>
           </div>
