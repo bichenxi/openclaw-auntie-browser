@@ -312,7 +312,7 @@ async function startRun() {
   tabsStore.switchToSpecialView('openclaw')
 
   // 屏蔽 stream-item 写入主聊天（执行卡片自行展示进度）
-  ocStore.suppressStream = true
+  // ocStore.suppressStream = true  // removed: flow uses flow-stream-item event
 
   // 创建执行状态，推入一条 flow 类型消息（渲染为卡片）
   const { branches, convergeIds } = computeBranchLayout(flow, levels)
@@ -341,6 +341,7 @@ async function startRun() {
       try {
         const output = await runFlowNode({
           token,
+          nodeId: node.id,
           sessionKey: `agent:${node.agent_work}:${node.agent_work}`,
           input,
           ...baseUrlOpt,
@@ -367,6 +368,7 @@ async function startRun() {
         levelNodes.map(node =>
           runFlowNode({
             token,
+            nodeId: node.id,
             sessionKey: `agent:${node.agent_work}:${node.agent_work}`,
             input: buildNodePrompt(node, flow, nodeOutputs, initialTask.value),
             ...baseUrlOpt,
@@ -398,7 +400,6 @@ async function startRun() {
   }
 
   ocStore.finishFlowExecution(execId, allSucceeded ? 'completed' : 'failed')
-  ocStore.suppressStream = false
   running.value = false
 
   // 最终结果以普通对话形式展示

@@ -35,9 +35,6 @@ export const useOpenclawStore = defineStore('openclaw', () => {
   const sending = ref(false)
   const sendError = ref('')
 
-  /** 为 true 时，stream-item / stream-done 事件不写入 messages（flow 执行期间使用） */
-  const suppressStream = ref(false)
-
   /** 所有工作流执行状态，reactive 以驱动卡片更新 */
   const flowExecutions = ref<Record<string, FlowExecutionState>>({})
 
@@ -47,8 +44,15 @@ export const useOpenclawStore = defineStore('openclaw', () => {
     if (listenersStarted) return
     listenersStarted = true
 
+    listen<{ nodeId: string; text: string }>('flow-stream-item', (e) => {
+      const { nodeId, text } = e.payload
+      for (const exec of Object.values(flowExecutions.value)) {
+        const node = exec.nodes.find(n => n.id === nodeId)
+        if (node) { node.output += text; break }
+      }
+    })
+
     listen<{ type: string; text: string }>('stream-item', (e) => {
-      if (suppressStream.value) return
       const payload = e.payload
       if (!payload?.type || !payload?.text) return
       const type: MessageType = payload.type === 'tool' ? 'tool' : 'thought'
@@ -61,7 +65,6 @@ export const useOpenclawStore = defineStore('openclaw', () => {
     })
 
     listen('stream-done', () => {
-      if (suppressStream.value) return
       const last = messages.value[messages.value.length - 1]
       if (last && last.streaming) last.streaming = false
       sending.value = false
@@ -101,7 +104,7 @@ export const useOpenclawStore = defineStore('openclaw', () => {
   }
 
   return {
-    messages, sending, sendError, suppressStream,
+    messages, sending, sendError,
     flowExecutions,
     startListeners,
     createFlowExecution, updateFlowNode, finishFlowExecution,

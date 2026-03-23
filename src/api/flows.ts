@@ -74,6 +74,7 @@ export interface RunFlowNodeParams {
   baseUrl?: string
   token: string
   sessionKey: string
+  nodeId: string
   model?: string
   input: string
 }

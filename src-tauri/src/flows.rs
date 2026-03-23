@@ -349,6 +349,7 @@ pub async fn run_flow_node(
     base_url: Option<String>,
     token: String,
     session_key: String,
+    node_id: String,
     model: Option<String>,
     input: String,
 ) -> Result<String, String> {
@@ -420,13 +421,16 @@ pub async fn run_flow_node(
                         .to_string();
                     if !text.is_empty() {
                         full_text.push_str(&text);
-                        let _ = app.emit("stream-item", serde_json::json!({ "type": "thought", "text": text }));
+                        let _ = app.emit("flow-stream-item", serde_json::json!({
+                            "nodeId": &node_id,
+                            "text": text,
+                        }));
                     }
                 }
             }
         }
     }
 
-    let _ = app.emit("stream-done", serde_json::Value::Null);
+    let _ = app.emit("flow-stream-done", serde_json::json!({ "nodeId": &node_id }));
     Ok(full_text)
 }
